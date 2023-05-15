@@ -384,17 +384,40 @@
 ;; Screen Management
 ;; ---------------------
 
+;; Entity
+
+(fn react-entities! [self screen-state]
+  (if (not (ui->active?))
+      (let [screen-state (or screen-state {})
+            reacted (mapv #(let [up ($:react (merge (or $.state {}) screen-state))]
+                             (if (= :die up)
+                                 nil
+                                 (table? up)
+                                 (merge $ {:state up})
+                                 $))
+                          self.entities)]
+        (tset self :entities reacted))))
+
+(fn draw-entities! [self screen-state]
+  (let [screen-state (or screen-state {})]
+   (mapv #($:render (merge (or $.state {}) screen-state)) self.entities)))
+
 ;; Handles swapping screens (title / game)
 (global $screen
-        {:tick! #(let [screen-tick (. (or $.active {:tick #:noop}) :tick)]
-                   (screen-tick $.active)
+        {:tick! #(let [screen-tick (. (or $.active {:tick #:noop}) :tick)
+                       new-state   (screen-tick $.active $.active.state)]
+                   (tset $.active :state new-state)
                    (ui->react!)
                    (ui->display!))
          :active nil
          :screens {}
+         ;; Swap + prepare
          :select! (fn [self name] (let [screen (?. self.screens name)]
                                     (tset self :active screen)
                                     (screen:prepare)))
+         ;; Switch without preparing (allows pause screens)
+         :swap! (fn [self name] (let [screen (?. self.screens name)]
+                                    (tset self :active screen)))
          :add! (fn [self screen] (let [name screen.screen]
                                    (tset self.screens name screen)))})
 
@@ -439,13 +462,37 @@
                         {:label "Cancel"}]})
   )
 
+(fn draw-entity [{ : character} state _entities]
+  (draw-sprite! (merge character state)))
+
+(fn player-react [self {: x : y : ticks} _entities]
+  (let [x (if (btn 2) (- x 1) (btn 3) (+ x 1) x)
+        y (if (btn 0) (- y 1) (btn 1) (+ y 1) y)]
+    (if (btnp 5)
+        :die
+        {: x : y})))
+
 (fn _G.BOOT []
+  ($screen:add!
+   {:screen :pause
+    :tick
+    (fn []
+      (cls 0)
+      (print "Paused..." 84 24 13))
+    :prepare
+    (fn []
+      (poke 0x03FF8 8)
+      ($ui:clear-all!)
+      ($ui:menu! {:box {:x 50 :w 140}
+                  :options [{:label "Play" :action #($screen:swap! :game)}
+                            {:label "Quit" :action #($screen:select! :title)}]}))})
+
   ($screen:add!
    {:screen :title
     :tick
     (fn []
       (cls 0)
-      (print "I'm here" 84 84 13))
+      (print "I'm here" 84 24 13))
     :prepare
     (fn []
       (poke 0x03FF8 8)
@@ -455,57 +502,34 @@
                             {:label "UI Test" :keep-open? true :action #(ui-testbed)}]}))})
   ($screen:add!
    {:screen :game
+    :state {:ticks t}
     :tick
-    (fn [self]
-      (let [screen-state {:ticks t}]
-        ;; (if (btnp 6) ($screen:select! :title))
-        (if (not (ui->active?))
-            (let [reacted (mapv #(let [up ($:react (merge (or $.state {}) screen-state))]
-                                   (if (= :die up)
-                                       nil
-                                       (table? up)
-                                       (merge $ {:state up})
-                                       $))
-                                self.entities)]
-              (tset self :entities reacted)))
-        (cls 0)
-        (if (empty? self.entities)
-            ($screen:select! :title)
-            (mapv #($:render (merge (or $.state {}) screen-state)) self.entities)))
-      ;; (let [blinker {:sprite 1
-      ;;                :ticks t
-      ;;                ;; Test weird blink patterns
-      ;;                :animate {:period 2000 :steps [{:t 0 :index 1} {:t 50 :index 2} {:t 60 :index 1}
-      ;;                                               {:t 200 :index 2} {:t 212 :index 1} {:t 215 :index 2} {:t 230 :index 1}]}
-      ;;                :trans 14
-      ;;                :x player-x :y player-y :w 2 :h 2}]
-      ;;   (draw-sprite! blinker))
-      (print (.. "HELLO WORLD! t=" t) 84 84 13)
-      (++ t))
+    (fn [self screen-state]
+      (if (btnp 6) ($screen:select! :pause))
+      (react-entities! self screen-state)
+      (cls 0)
+      (draw-entities! self screen-state)
+      (if (empty? self.entities)
+          ($screen:select! :title))
+      (print (.. "HELLO WORLD! t=" screen-state.ticks) 84 84 13)
+      {:ticks (+ screen-state.ticks 1)})
     :entities []
     :add-entity! (fn [self ent] (into self.entities [ent]))
     :prepare
     (fn prepare-game [self]
       (poke 0x03FF8 10)
+      (tset self :entities [])
       (set t 0)
       ($ui:clear-all!)
-      (self:add-entity! {:render
-                         (fn [{ : character : state} {: x : y : ticks}]
-                           (draw-sprite! (merge character {: x : y : ticks})))
-                         :react
-                         (fn [self {: x : y}]
-                           (let [x (if (btn 2) (- x 1) (btn 3) (+ x 1) x)
-                                 y (if (btn 0) (- y 1) (btn 1) (+ y 1) y)]
-                             (if (btnp 5)
-                                 :die
-                                 {: x : y})))
+      (self:add-entity! {:render draw-entity
+                         :react player-react
                          :state {:x player-x :y player-y}
                          :character
                          {:sprite 1
                           :ticks t
                           ;; Test weird blink patterns
-                          :animate {:period 800 :steps [{:t 0 :index 1}
-                                                        {:t 100 :index 2} {:t 112 :index 1} {:t 115 :index 2} {:t 130 :index 1}]}
+                          :animate {:period 800 :steps [{:t 0 :index 1} {:t 100 :index 2} {:t 112 :index 1}
+                                                        {:t 115 :index 2} {:t 130 :index 1}]}
                           :trans 14
                           :x player-x :y player-y :w 2 :h 2}})
       )})
