@@ -42,7 +42,14 @@
          acc#)))
 
 (fn count [coll]
-  (if coll (length coll)))
+  (if (arr? coll)
+      (length coll)
+      (table? coll)
+      (accumulate [count 0 i v (pairs coll)] (+ count 1))
+      coll (length coll)
+      nil))
+(fn empty? [coll]
+  (if (nil? coll) true (= 0 (count coll))))
 
 (fn into [arr val ...]
   "Insert a list of values at the end of an existing list. "
@@ -83,6 +90,10 @@
 (fn mapv [func coll]
   (assert (table? coll) "last arg must be collection")
   (icollect [_ v (ipairs coll)] (func v)))
+
+(fn mapiv [func coll]
+  (assert (table? coll) "last arg must be collection")
+  (icollect [i v (ipairs coll)] (func i v)))
 
 (fn take [n coll]
   (assert (table? coll) "last arg must be collection")
@@ -191,10 +202,25 @@
     (merge styles {:inner-w (- styles.w pad2)
                    :inner-h (- styles.h pad2)})))
 
+(fn pick-animated-sprite [{ : w : animate : ticks : sprite}]
+  (if (nil? animate)
+      sprite
+      (let [{ : period : steps } animate
+            new-steps  (mapiv #(if (table? $2)
+                                    (merge {:index $1} $2)
+                                    {:index $1 :t $2})
+                              steps)
+            time-spot   (% ticks period)
+            sheet-index (or (last (mapv #(if (>= time-spot $.t) $.index) new-steps)) 1)
+            sprite-num  (* (or w 1) (- sheet-index 1))]
+        (+ sprite-num sprite))))
+
 (fn draw-sprite! [{: sprite : w : h : scale : trans : x : y
+                   : animate : ticks
                    : flip : rotate
                    : anchor-x : anchor-y : shift-x : shift-y}]
-  (let [scale (or scale 1)
+  (let [sprite (pick-animated-sprite { : ticks : w : sprite : animate})
+        scale (or scale 1)
         w (or w 1)
         full-w (* 8 w scale)
         h (or h 1)
@@ -259,9 +285,13 @@
                  u (+ box.x box.w -5)
                  v (+ box.y box.h -1)
                  letter-cnt (// ticks 2)
-                 mid-x (+ box.x (// box.w 2))]
-             (if character
-                 (draw-sprite! (merge character {:x mid-x :y box.y :anchor-x :center :anchor-y :bottom})))
+                 mid-x (+ box.x (// box.w 2))
+                 mid-y (+ box.y (// box.h 2))
+                 ]
+             (if (and character (= character.position :left))
+                 (draw-sprite! (merge character {:x box.x :y mid-y :anchor-x :right :anchor-y :center : ticks}))
+                 character
+                 (draw-sprite! (merge character {:x mid-x :y box.y :anchor-x :center :anchor-y :bottom : ticks})))
              (draw-box! box)
              (accumulate [prev-letters 0
                           ln line-text (ipairs lines)]
@@ -357,7 +387,7 @@
 ;; Handles swapping screens (title / game)
 (global $screen
         {:tick! #(let [screen-tick (. (or $.active {:tick #:noop}) :tick)]
-                   (screen-tick)
+                   (screen-tick $.active)
                    (ui->react!)
                    (ui->display!))
          :active nil
@@ -387,18 +417,20 @@
 
 (fn ui-testbed []
   ($ui:textbox! {:tag :test
-                 :character {:h 2 :w 2 :sprite 1 :trans 14 :scale 2}
+                 :character {:h 2 :w 2 :sprite 1 :trans 14 :scale 2
+                             :shift-x -2
+                             :position :left}
                  :box {:x 120 :y 2} :text " As the circumstances of his marriage illustrate his character, I cannot refrain from relating them. One of his most intimate friends was a merchant who, from a flourishing state, fell, through numerous mischances, into poverty. This man, whose name was Beaufort, was of a proud and unbending disposition and could not bear to live in poverty and oblivion in the same country where he had formerly been distinguished for his rank and magnificence. Having paid his debts, therefore, in the most honourable manner, he retreated with his daughter to the town of Lucerne, where he lived unknown and in wretchedness. My father loved Beaufort with the truest friendship and was deeply grieved by his retreat in these unfortunate circumstances. He bitterly deplored the false pride which led his friend to a conduct so little worthy of the affection that united them. He lost no time in endeavouring to seek him out, with the hope of persuading him to begin the world again through his credit and assistance. "})
   ($ui:textbox! {:tag :test
-                 :character {:h 2 :w 2 :sprite 1 :trans 14 :scale 3}
+                 :character {:h 2 :w 2 :sprite 1 :trans 14 :scale 3
+                             :animate {:period 90 :steps [0 80]}}
                  :text " I am by birth a Genevese, and my family is one of the most distinguished of that republic. My ancestors had been for many years counsellors and syndics, and my father had filled several public situations with honour and reputation. He was respected by all who knew him for his integrity and indefatigable attention to public business. He passed his younger days perpetually occupied by the affairs of his country; a variety of circumstances had prevented his marrying early, nor was it until the decline of life that he became a husband and the father of a family. "})
-  ($ui:textbox! {:tag :test
-
-                 :character {:h 2 :w 2 :sprite 1 :trans 14}
-                 :box {:w 120 :h 24} :text " I am by birth a Genevese, and my family is one of the most distinguished of that republic. My ancestors had been for many years counsellors and syndics, and my father had filled several public situations with honour and reputation. He was respected by all who knew him for his integrity and indefatigable attention to public business. He passed his younger days perpetually occupied by the affairs of his country; a variety of circumstances had prevented his marrying early, nor was it until the decline of life that he became a husband and the father of a family. "})
+  ;; ($ui:textbox! {:tag :test
+  ;;                :character {:h 2 :w 2 :sprite 1 :trans 14}
+  ;;                :box {:w 120 :h 24} :text " I am by birth a Genevese, and my family is one of the most distinguished of that republic. My ancestors had been for many years counsellors and syndics, and my father had filled several public situations with honour and reputation. He was respected by all who knew him for his integrity and indefatigable attention to public business. He passed his younger days perpetually occupied by the affairs of his country; a variety of circumstances had prevented his marrying early, nor was it until the decline of life that he became a husband and the father of a family. "})
   ;; (ui<-pop-component!)
   ($ui:textbox! {:tag :test
-                 :character {:h 2 :w 2 :sprite 1 :trans 14}
+                 ;; :character {:h 2 :w 2 :sprite 1 :trans 14}
                  :box {:x 140 :y 110 :h 18} :text "And here we go"})
   ($ui:menu! {:box {:x 140}
               :tag :test
@@ -406,7 +438,6 @@
                         {:label "Clear UI" :action #($ui:clear-all! :test)}
                         {:label "Cancel"}]})
   )
-
 
 (fn _G.BOOT []
   ($screen:add!
@@ -425,19 +456,59 @@
   ($screen:add!
    {:screen :game
     :tick
-    (fn []
-      (if (not (ui->active?))
-          (?buttons))
-      (cls 0)
-      (spr (+ 1 (* (// (% t 60) 30) 2)) player-x player-y 14 2 0 0 2 2)
+    (fn [self]
+      (let [screen-state {:ticks t}]
+        ;; (if (btnp 6) ($screen:select! :title))
+        (if (not (ui->active?))
+            (let [reacted (mapv #(let [up ($:react (merge (or $.state {}) screen-state))]
+                                   (if (= :die up)
+                                       nil
+                                       (table? up)
+                                       (merge $ {:state up})
+                                       $))
+                                self.entities)]
+              (tset self :entities reacted)))
+        (cls 0)
+        (if (empty? self.entities)
+            ($screen:select! :title)
+            (mapv #($:render (merge (or $.state {}) screen-state)) self.entities)))
+      ;; (let [blinker {:sprite 1
+      ;;                :ticks t
+      ;;                ;; Test weird blink patterns
+      ;;                :animate {:period 2000 :steps [{:t 0 :index 1} {:t 50 :index 2} {:t 60 :index 1}
+      ;;                                               {:t 200 :index 2} {:t 212 :index 1} {:t 215 :index 2} {:t 230 :index 1}]}
+      ;;                :trans 14
+      ;;                :x player-x :y player-y :w 2 :h 2}]
+      ;;   (draw-sprite! blinker))
       (print (.. "HELLO WORLD! t=" t) 84 84 13)
       (++ t))
+    :entities []
+    :add-entity! (fn [self ent] (into self.entities [ent]))
     :prepare
-    (fn prepare-title []
+    (fn prepare-game [self]
       (poke 0x03FF8 10)
+      (set t 0)
       ($ui:clear-all!)
+      (self:add-entity! {:render
+                         (fn [{ : character : state} {: x : y : ticks}]
+                           (draw-sprite! (merge character {: x : y : ticks})))
+                         :react
+                         (fn [self {: x : y}]
+                           (let [x (if (btn 2) (- x 1) (btn 3) (+ x 1) x)
+                                 y (if (btn 0) (- y 1) (btn 1) (+ y 1) y)]
+                             (if (btnp 5)
+                                 :die
+                                 {: x : y})))
+                         :state {:x player-x :y player-y}
+                         :character
+                         {:sprite 1
+                          :ticks t
+                          ;; Test weird blink patterns
+                          :animate {:period 800 :steps [{:t 0 :index 1}
+                                                        {:t 100 :index 2} {:t 112 :index 1} {:t 115 :index 2} {:t 130 :index 1}]}
+                          :trans 14
+                          :x player-x :y player-y :w 2 :h 2}})
       )})
-
   ($screen:select! :title)
   )
 
