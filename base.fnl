@@ -503,6 +503,19 @@
                  :options [{:label "Play Game" :action #($screen:select! :game)}
                            {:label "UI Test" :keep-open? true :action #(ui-testbed)}]}))})
 
+(var player
+     {:render draw-entity
+      :react player-react
+      :state {:x player-x :y player-y}
+      :character
+      {:sprite 1
+       :ticks t
+       ;; Test weird blink patterns
+       :animate {:period 800 :steps [{:t 0 :index 1} {:t 100 :index 2} {:t 112 :index 1}
+                                     {:t 115 :index 2} {:t 130 :index 1}]}
+       :trans 14
+       :x player-x :y player-y :w 2 :h 2}})
+
 
 (defscreen $screen :game
   {:state {:ticks t}
@@ -524,17 +537,7 @@
      (tset self :entities [])
      (tset self :state {:ticks 0})
      ($ui:clear-all!)
-     (self:add-entity! {:render draw-entity
-                        :react player-react
-                        :state {:x player-x :y player-y}
-                        :character
-                        {:sprite 1
-                         :ticks t
-                         ;; Test weird blink patterns
-                         :animate {:period 800 :steps [{:t 0 :index 1} {:t 100 :index 2} {:t 112 :index 1}
-                                                       {:t 115 :index 2} {:t 130 :index 1}]}
-                         :trans 14
-                         :x player-x :y player-y :w 2 :h 2}})
+     (self:add-entity! player)
      )})
 
 (fn _G.BOOT []
