@@ -421,6 +421,11 @@
          :add! (fn [self screen] (let [name screen.screen]
                                    (tset self.screens name screen)))})
 
+(macro defscreen [screen name fns]
+  `(let [screen-comp# (merge {:screen ,name} ,fns)]
+     (tset (. ,screen :screens) ,name screen-comp#)
+     (: ,screen :add! screen-comp#)
+     screen-comp#))
 
 ;; -------
 
@@ -472,67 +477,67 @@
         :die
         {: x : y})))
 
-(fn _G.BOOT []
-  ($screen:add!
-   {:screen :pause
-    :tick
-    (fn []
-      (cls 0)
-      (print "Paused..." 84 24 13))
-    :prepare
-    (fn []
-      (poke 0x03FF8 8)
-      ($ui:clear-all!)
-      ($ui:menu! {:box {:x 50 :w 140}
-                  :options [{:label "Play" :action #($screen:swap! :game)}
-                            {:label "Quit" :action #($screen:select! :title)}]}))})
+(defscreen $screen :pause
+  {:tick
+   (fn []
+     (cls 0)
+     (print "Paused..." 84 24 13))
+   :prepare
+   (fn []
+     (poke 0x03FF8 8)
+     ($ui:clear-all!)
+     ($ui:menu! {:box {:x 50 :w 140}
+                 :options [{:label "Play" :action #($screen:swap! :game)}
+                           {:label "Quit" :action #($screen:select! :title)}]}))})
 
-  ($screen:add!
-   {:screen :title
-    :tick
-    (fn []
-      (cls 0)
-      (print "I'm here" 84 24 13))
-    :prepare
-    (fn []
-      (poke 0x03FF8 8)
-      ($ui:clear-all!)
-      ($ui:menu! {:box {:x 50 :w 140}
-                  :options [{:label "Play Game" :action #($screen:select! :game)}
-                            {:label "UI Test" :keep-open? true :action #(ui-testbed)}]}))})
-  ($screen:add!
-   {:screen :game
-    :state {:ticks t}
-    :tick
-    (fn [self screen-state]
-      (if (btnp 6) ($screen:select! :pause))
-      (react-entities! self screen-state)
-      (cls 0)
-      (draw-entities! self screen-state)
-      (if (empty? self.entities)
-          ($screen:select! :title))
-      (print (.. "HELLO WORLD! t=" screen-state.ticks) 84 84 13)
-      {:ticks (+ screen-state.ticks 1)})
-    :entities []
-    :add-entity! (fn [self ent] (into self.entities [ent]))
-    :prepare
-    (fn prepare-game [self]
-      (poke 0x03FF8 10)
-      (tset self :entities [])
-      (tset self :state {:ticks 0})
-      ($ui:clear-all!)
-      (self:add-entity! {:render draw-entity
-                         :react player-react
-                         :state {:x player-x :y player-y}
-                         :character
-                         {:sprite 1
-                          :ticks t
-                          ;; Test weird blink patterns
-                          :animate {:period 800 :steps [{:t 0 :index 1} {:t 100 :index 2} {:t 112 :index 1}
-                                                        {:t 115 :index 2} {:t 130 :index 1}]}
-                          :trans 14
-                          :x player-x :y player-y :w 2 :h 2}})
-      )})
+(defscreen $screen :title
+  {:tick
+   (fn []
+     (cls 0)
+     (print "I'm here" 84 24 13))
+   :prepare
+   (fn []
+     (poke 0x03FF8 8)
+     ($ui:clear-all!)
+     ($ui:menu! {:box {:x 50 :w 140}
+                 :options [{:label "Play Game" :action #($screen:select! :game)}
+                           {:label "UI Test" :keep-open? true :action #(ui-testbed)}]}))})
+
+
+(defscreen $screen :game
+  {:state {:ticks t}
+   :tick
+   (fn [self screen-state]
+     (if (btnp 6) ($screen:select! :pause))
+     (react-entities! self screen-state)
+     (cls 0)
+     (draw-entities! self screen-state)
+     (if (empty? self.entities)
+         ($screen:select! :title))
+     (print (.. "HELLO WORLD! t=" screen-state.ticks) 84 84 13)
+     {:ticks (+ screen-state.ticks 1)})
+   :entities []
+   :add-entity! (fn [self ent] (into self.entities [ent]))
+   :prepare
+   (fn prepare-game [self]
+     (poke 0x03FF8 10)
+     (tset self :entities [])
+     (tset self :state {:ticks 0})
+     ($ui:clear-all!)
+     (self:add-entity! {:render draw-entity
+                        :react player-react
+                        :state {:x player-x :y player-y}
+                        :character
+                        {:sprite 1
+                         :ticks t
+                         ;; Test weird blink patterns
+                         :animate {:period 800 :steps [{:t 0 :index 1} {:t 100 :index 2} {:t 112 :index 1}
+                                                       {:t 115 :index 2} {:t 130 :index 1}]}
+                         :trans 14
+                         :x player-x :y player-y :w 2 :h 2}})
+     )})
+
+(fn _G.BOOT []
   ($screen:select! :title)
   )
 
