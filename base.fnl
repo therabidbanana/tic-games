@@ -519,7 +519,7 @@
     (fn prepare-game [self]
       (poke 0x03FF8 10)
       (tset self :entities [])
-      (set t 0)
+      (tset self :state {:ticks 0})
       ($ui:clear-all!)
       (self:add-entity! {:render draw-entity
                          :react player-react
