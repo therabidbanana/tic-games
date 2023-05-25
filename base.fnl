@@ -3,7 +3,7 @@
 ;; desc:    Messing around with fennel
 ;; site:    website link
 ;; license: MIT License
-;; version: 0.1
+;; version: 0.2
 ;; script:  fennel
 ;; strict:  true
 
@@ -239,6 +239,9 @@
   (rect x y w h bg-color)
   (rectb x y w h border-color))
 
+(fn draw-map! [{: w : h : x : y : sx : sy : trans}]
+  (map (or x 0) (or y 0) (or w 30) (or h 17) (or sx 0) (or sy 0) (or trans -1)))
+
 (fn draw-right-arrow! [{: x : y : ticks}]
   (let [wobble (if (> (% (or ticks 0) 70) 40)
                    1
@@ -368,6 +371,54 @@
                (do ($ui:pop) (action))))
        (tset self :ticks (+ (or (?. self :ticks) ticks) 1))))})
 
+(defui $ui
+  :sprite-selector
+  {:open
+   (fn [self {: box : map : sprites : tag}]
+     ;; TODO - visit box styles?
+     (let [box (box-styles (merge (or box {}) {:chars 40}))
+           arrow :down
+           selected 1]
+       ($ui:push
+        (merge self {: tag : box : map : sprites : selected :ticks 0 : arrow}))))
+   :render
+   (fn [{: component : box : map : sprites : ticks : selected : arrow}]
+     (let [arrow-fn (if (= arrow :right) draw-right-arrow! draw-down-arrow!)]
+       (let [ticks (or ticks 0)]
+         ;; (draw-box! box)
+         (if map (draw-map! map))
+         (each [idx ent (ipairs sprites)]
+           ;; (print tx (+ box.padding 4 box.x) y-spot box.text-color)
+           (draw-sprite! ent)
+           ;; TODO - handle arrow placement
+           (let [u (+ ent.x (// (* (or ent.w 1) 8) 2))
+                 v (- ent.y 4)]
+             (if (= selected idx)
+                 (arrow-fn {:x u :y v : ticks})))))))
+   :react
+   (fn [self]
+     (let [{ : selected : sprites} self
+           dec-select  (max (- selected 1) 1)
+           opt-count     (count sprites)
+           inc-select  (min (+ 1 selected) opt-count)
+           curr-option (?. sprites selected)
+           action      (or curr-option.action #:no-action)
+           keep-open?  curr-option.keep-open?
+           ticks       (or self.ticks 0)]
+       (if (or (btnp 0) (btnp 2))
+           (doto self
+             (tset :ticks 0)
+             (tset :selected dec-select))
+           (or (btnp 1) (btnp 3))
+           (doto self
+             (tset :ticks 0)
+             (tset :selected inc-select))
+           (btnp 4)
+           (if keep-open?
+               (action)
+               (do ($ui:pop) (action))))
+       (tset self :ticks (+ (or (?. self :ticks) ticks) 1))))})
+
 ;; Not clear if this should be true yet - render all components?
 ;; I think general idea is if a menu kicks a text box, menu still exists
 (fn ui->display! []
@@ -433,16 +484,6 @@
 (var player-x 96)
 (var player-y 24)
 
-(fn ?buttons []
-  (when (btn 0)
-    (-- player-y))
-  (when (btn 1)
-    (++ player-y))
-  (when (btn 2)
-    (-- player-x))
-  (when (btn 3)
-    (++ player-x)))
-
 (fn ui-testbed []
   ($ui:textbox! {:tag :test
                  :character {:h 2 :w 2 :sprite 1 :trans 14 :scale 2
@@ -460,9 +501,14 @@
   ($ui:textbox! {:tag :test
                  ;; :character {:h 2 :w 2 :sprite 1 :trans 14}
                  :box {:x 140 :y 110 :h 18} :text "And here we go"})
+  (var map-details
+       {:map {}
+        :sprites [{:h 2 :w 2 :sprite 1 :trans 14 :x 34 :y 100}
+                  {:h 2 :w 2 :sprite 1 :trans 14 :x 134 :y 20}]})
   ($ui:menu! {:box {:x 140}
               :tag :test
               :options [{:label "Say Foobar?" :keep-open? true :action #($ui:textbox! {:box {:x 140} :text "Foobar!"})}
+                        {:label "Open Map" :action #(do ($ui:clear-all! :test) ($ui:sprite-selector! map-details))}
                         {:label "Clear UI" :action #($ui:clear-all! :test)}
                         {:label "Cancel"}]})
   )
@@ -566,14 +612,12 @@
 ;; 000:0033006603300660330066003006600300660033066003306600330060033006
 ;; </SPRITES>
 
-;; <WAVES>
-;; </WAVES>
-
-;; <SFX>
-;; </SFX>
-
-;; <TRACKS>
-;; </TRACKS>
+;; <MAP>
+;; 000:020200000000000000000000000000000000000000000000000000020202000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+;; 001:020000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+;; 015:020000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+;; 016:020200000000000000000000000000000000000000000000000000000202000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+;; </MAP>
 
 ;; <PALETTE>
 ;; 000:1a1c2c5d275db13e53ef7d57ffcd75a7f07038b76425717929366f3b5dc941a6f673eff7f4f4f494b0c2566c86333c57
