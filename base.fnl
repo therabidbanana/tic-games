@@ -483,6 +483,7 @@
 (var t 0)
 (var player-x 96)
 (var player-y 24)
+(var player-sprite 1)
 
 (fn ui-testbed []
   ($ui:textbox! {:tag :test
@@ -503,8 +504,10 @@
                  :box {:x 140 :y 110 :h 18} :text "And here we go"})
   (var map-details
        {:map {}
-        :sprites [{:h 2 :w 2 :sprite 1 :trans 14 :x 34 :y 100}
-                  {:h 2 :w 2 :sprite 1 :trans 14 :x 134 :y 20}]})
+        :sprites [{:h 2 :w 2 :sprite 34 :trans 14 :x 34 :y 100 :action #(set player-sprite 34)}
+                  {:h 2 :w 2 :sprite 36 :trans 14 :x 134 :y 20 :action #(set player-sprite 36)}
+                  {:h 2 :w 2 :sprite 66 :trans 14 :x 160 :y 120 :action #(set player-sprite 66)}
+                  {:h 2 :w 2 :sprite 1 :trans 14 :x 12 :y 62 :action #(set player-sprite 1)}]})
   ($ui:menu! {:box {:x 140}
               :tag :test
               :options [{:label "Say Foobar?" :keep-open? true :action #($ui:textbox! {:box {:x 140} :text "Foobar!"})}
@@ -516,12 +519,12 @@
 (fn draw-entity [{ : character} state _entities]
   (draw-sprite! (merge character state)))
 
-(fn player-react [self {: x : y : ticks} _entities]
+(fn player-react [self {: x : y : ticks : sprite} _entities]
   (let [x (if (btn 2) (- x 1) (btn 3) (+ x 1) x)
         y (if (btn 0) (- y 1) (btn 1) (+ y 1) y)]
     (if (btnp 5)
         :die
-        {: x : y})))
+        {: x : y : sprite})))
 
 (defscreen $screen :pause
   {:tick
@@ -540,7 +543,8 @@
   {:tick
    (fn []
      (cls 0)
-     (print "I'm here" 84 24 13))
+     (print (.. "I'm here - " player-sprite) 84 24 13)
+     )
    :prepare
    (fn []
      (poke 0x03FF8 8)
@@ -552,9 +556,9 @@
 (var player
      {:render draw-entity
       :react player-react
-      :state {:x player-x :y player-y}
+      :state {:x player-x :y player-y :sprite player-sprite}
       :character
-      {:sprite 1
+      {:sprite player-sprite
        :ticks t
        ;; Test weird blink patterns
        :animate {:period 800 :steps [{:t 0 :index 1} {:t 100 :index 2} {:t 112 :index 1}
@@ -583,7 +587,7 @@
      (tset self :entities [])
      (tset self :state {:ticks 0})
      ($ui:clear-all!)
-     (self:add-entity! player)
+     (self:add-entity! (merge player {:state {:x 0 :y 20 :sprite player-sprite}}))
      )})
 
 (fn _G.BOOT []
@@ -604,8 +608,20 @@
 ;; 020:ccca00ccaaaa0ccecaaa0ceeaaaa0ceeaaaa0cee8888ccee000cceeecccceeee
 ;; 032:0033006603300660330066003006600300660033066003306600330060033006
 ;; 033:0033006603300660330066003006600300660033066003306600330060033006
+;; 034:eccccccccc222222c3333333c3222222c3ccccccc3cc0cccc3cc0cccc3cc0ccc
+;; 035:ccccceee2222ccee33330cee22230ceeccc30ccc0cc30c0c0cc30c0c0cc30c0c
+;; 036:ebbbbbbbbb777777b1111111b1777777b1ccccccb1cc6cccb1cc6cccb1cc6ccc
+;; 037:bbbbbeee7777bbee11110bee77710beeccc10bbb6cc10b0b6cc10b0b6cc10b0b
 ;; 048:0033006603300660330066003006600300660033066003306600330060033006
 ;; 049:0033006603300660330066003006600300660033066003306600330060033006
+;; 050:c3ccccccc3333333c333c333c3333cccc3333333c2222222cc000cccecccccec
+;; 051:ccc300cc33330ccec3330cee33330cee33330cee2222ccee000cceeecccceeee
+;; 052:b1ccccccb1111111b111c111b1111cccb1111111b7777777bb000bbbebbbbbeb
+;; 053:ccc100bb11110bbec1110bee11110bee11110bee7777bbee000bbeeebbbbeeee
+;; 066:ebbbbbbbbb111111b2222222b2111111b2ccccccb2cc3cccb2cc3cccb2cc3ccc
+;; 067:bbbbbeee1111bbee22220bee11120beeccc20bbb3cc20b0b3cc20b0b3cc20b0b
+;; 082:b2ccccccb2222222b222c222b2222cccb2222222b1111111bb000bbbebbbbbeb
+;; 083:ccc200bb22220bbec2220bee22220bee22220bee1111bbee000bbeeebbbbeeee
 ;; </TILES>
 
 ;; <SPRITES>
