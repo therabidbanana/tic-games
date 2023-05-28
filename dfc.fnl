@@ -168,11 +168,11 @@
         line-count (max (// h chr-size) 1)]
     (partition lines line-count)))
 
-(fn inside? [{: x : y : h : w &as box} {:x x1 :y y1 &as point}]
-  (and (>= x1 x) (<= x1 (+ x w))
-       (>= y1 y) (<= y1 (+ y h))))
+(fn inside? [{: x : y &as box} {:x x1 :y y1 &as point}]
+  (and (>= x1 x) (<= x1 (+ x box.w))
+       (>= y1 y) (<= y1 (+ y box.h))))
 
-(fn touches? [{: x : y : h : w &as ent1} {&as ent2}]
+(fn touches? [{: x : y : w : h &as ent1} {&as ent2}]
   (or
    (inside? ent2 {:x (+ 0 x) :y (+ 0 y)})
    (inside? ent2 {:x (+ w x) :y (+ 0 y)})
@@ -456,13 +456,14 @@
 (fn react-entities! [self screen-state]
   (if (not (ui->active?))
       (let [screen-state (or screen-state {})
-            reacted (mapv #(let [up ($:react (merge (or $.state {}) screen-state))]
+            entities (or self.entities [])
+            reacted (mapv #(let [up ($:react (merge (or $.state {}) screen-state) entities)]
                              (if (= :die up)
                                  nil
                                  (table? up)
-                                 (merge $ {:state up})
+                                 (doto $ (tset :state up))
                                  $))
-                          self.entities)]
+                          entities)]
         (tset self :entities reacted))))
 
 (fn draw-entities! [self screen-state]
@@ -520,20 +521,31 @@
   (draw-sprite! (merge character state)))
 
 (fn bullet-react [{&as bullet} {: x : y &as state} entities]
-  (let [intersected (-?>> (filterv #(= :enemy $.tag) entities)
-                          (filterv (partial touches? bullet))
+  (let [collision   (bullet:collision-box)
+        intersected (-?>> (filterv #(= :enemy $.tag) entities)
+                          (filterv #(touches? collision ($:collision-box)))
                           first)
         x (+ x state.dx)
         y (+ y state.dy)]
     (if intersected
-        (do (intersected:take-damage!) :die)
+        (do (intersected:take-damage! bullet) :die)
+        (not (touches? collision {:x -10 :y -10 :w 260 :h 200}))
+        :die
         (merge state {: x : y}))))
 
-(fn build-bullet [{&as player-ent}]
-  (let []
-    {:react (fn [{&as bullet} {&as state} entities]
-              )
-     :render ()}))
+(var palette {:red 2 :orange 3 :yellow 4 :green 6 :blue 9 :purple 1})
+
+(fn build-bullet [{: x : y : color : speed &as state}]
+  (let [speed (or speed 2)
+        dx    speed
+        dy    0
+        color (or color :red)]
+    {:react bullet-react
+     :state (merge state {: dx : dy : speed : color :h 2 :w 2})
+     :collision-box (fn [{: state}] {:x state.x :y state.y :w 2 :h 2})
+     :color color
+     :render (fn [{&as bullet} {: x : y : color : h : w} _e]
+               (rect x y w h (?. palette color)))}))
 
 (var next-color {:red :orange :orange :yellow :yellow :green :green :blue :blue :purple :purple :red})
 (fn player-react [self {: x : y : color &as state} _entities]
@@ -543,7 +555,7 @@
         ]
     (if (btnp 4)
         ;; TODO: Is there a less sneaky way to add entity?
-        (^in _entitites (build-bullet )))
+        (^in _entities (build-bullet {:x (+ x 15) :y (+ y 10) : color})))
     (merge state {: x : y : color})))
 
 (defscreen $screen :pause
@@ -582,9 +594,9 @@
 (var player
      {:render (fn draw-player [{: character &as ent} {: color &as state} _others]
                 (let [sprite (?. sprite-colors color)]
-                  (trace sprite)
                   (draw-sprite! (merge (merge character state) {: sprite}))))
       :react player-react
+      :collision-box (fn [{: state}] {:x state.x :y state.y :w 16 :h 16})
       :state {:x player-x :y player-y :color :yellow}
       :tags [:player]
       :character
@@ -594,18 +606,24 @@
        :trans 0
        :x player-x :y player-y :w 2 :h 2}})
 
-(fn enemy-react [self {: x : y : dx : dy : ticks} _entities]
+(fn enemy-react [self {: hp : x : y : dx : dy : ticks &as state} _entities]
   (let [x (if dx (+ x dx) x)
         y (if dy (+ y dy) y)
         dy (math.sin (/ ticks 40))]
     (if (< x -10)
         :die
-        {: x : y : dx : dy})))
+        (<= hp 0)
+        :die
+        (merge state {: x : y : dx : dy}))))
 
 (fn build-enemy [base-state]
   {:render draw-entity
    :react enemy-react
+   :tag :enemy
+   :collision-box (fn [{: state}] {:x state.x :y state.y :w 16 :h 16})
    :state (merge {} (or base-state {}))
+   :take-damage! (fn [self bullet]
+                   (tset self.state :hp (- (or self.state.hp 1) 1)))
    :character
    {:sprite 432 :trans 0 :w 2 :h 2}})
 
@@ -619,8 +637,11 @@
      (draw-entities! self screen-state)
      (if (empty? self.entities)
          ($screen:select! :title))
-     (print (.. "Pressed 5? " (if (btnp 5) "true" "false")) 20 20 13 )
-     (print (.. "HELLO WORLD! t=" screen-state.ticks) 84 84 13)
+     ;; (icollect [_ v (ipairs self.entities)]
+     ;;   (if (and (= :enemy v.tag) (> screen-state.ticks 60))
+     ;;       (v:take-damage! {})))
+     ;; (print (.. "Count " (count self.entities)) 20 20 13 )
+     ;; (print (.. "HELLO WORLD! t=" screen-state.ticks) 84 84 13)
      {:ticks (+ screen-state.ticks 1)})
    :entities []
    :add-entity! (fn [self ent] (into self.entities [ent]))
@@ -631,8 +652,8 @@
      (tset self :state {:ticks 0})
      ($ui:clear-all!)
      (self:add-entity! (merge player {:state {:x 0 :y 20 :color :orange}}))
-     (self:add-entity! (build-enemy {:dx -0.5 :x 200 :y 40}))
-     (self:add-entity! (build-enemy {:dx -0.5 :dy 1 :x 240 :y 100}))
+     (self:add-entity! (build-enemy {:dx -0.5 :x 200 :y 40 :hp 1}))
+     (self:add-entity! (build-enemy {:dx -0.5 :dy 1 :x 240 :y 100 :hp 1}))
      )})
 
 (fn _G.BOOT []
