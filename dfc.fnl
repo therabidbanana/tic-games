@@ -92,6 +92,11 @@
       (< val min) min
       val))
 
+(fn between? [val min max]
+  (if (> val max) false
+      (< val min) false
+      true))
+
 (fn mapv [func coll]
   (assert (table? coll) "last arg must be collection")
   (icollect [_ v (ipairs coll)] (func v)))
@@ -525,17 +530,55 @@
 (fn draw-entity [{ : character &as ent} state _entities]
   (draw-sprite! (merge character state)))
 
-(fn bullet-react [{&as bullet} {: x : y &as state} entities]
+;; TODO: Start figuring out tile coloration
+(fn tile-color [tile]
+  (let [col (% tile 16)
+        row (// tile 16)
+        secondary? (>= col 8)]
+    (if (>= row 9)
+        :none
+        (= tile 0)
+        :none
+        (< row 3)
+        (if secondary? :orange :red)
+        (< row 6)
+        (if secondary? :green :yellow)
+        :else
+        (if secondary? :purple :blue))))
+
+(var tile-starts {:red 0     :orange 8
+                  :yellow 48 :green 56
+                  :blue 96   :purple 104})
+
+(fn shift-tile-color [tile color]
+  (let [col (% tile 16)
+        row (// tile 16)
+        current-color (tile-color tile)
+        dist (- (?. tile-starts current-color) (?. tile-starts color))]
+    (if (or (= current-color :none) (= color :none) (= tile 0))
+        tile
+        (< row 9)
+        (- tile dist)
+        tile)))
+
+(fn bullet-react [{: color &as bullet} {: map-x : x : y &as state} entities]
   (let [collision   (bullet:collision-box)
         intersected (-?>> (filterv #(= :enemy $.tag) entities)
                           (filterv #(touches? collision ($:collision-box)))
                           first)
         x (+ x state.dx)
-        y (+ y state.dy)]
+        y (+ y state.dy)
+        tile-x (// (- x map-x) 8)
+        tile-y (// y 8)
+        tile (mget tile-x tile-y)
+        colorable-tile? (and (between? tile 1 144)
+                             (not= (tile-color tile) color))]
     (if intersected
         (do (intersected:take-damage! bullet) :die)
         (not (touches? {:x -10 :y -10 :w 260 :h 200} collision))
         :die
+        colorable-tile?
+        (do (mset tile-x tile-y (shift-tile-color tile color)) :die)
         (merge state {: x : y}))))
 
 (var palette {:red 2 :orange 3 :yellow 4 :green 6 :blue 9 :purple 1})
@@ -569,7 +612,7 @@
 (defscreen $screen :pause
   {:tick
    (fn []
-     (cls 0)
+     (cls 14)
      (print "Paused..." 84 24 13))
    :prepare
    (fn []
@@ -642,7 +685,7 @@
    (fn [self {: ticks : map-x &as screen-state}]
      ;; (if (btnp 7) ($screen:select! :pause))
      (react-entities! self screen-state)
-     (cls 0)
+     (cls 8)
      (let [player-ent (->> (filterv #(= :player $.tag) self.entities) first)
            new-player-x (clamp player-ent.state.x 80 160)
            map-shift (- player-ent.state.x new-player-x)
@@ -650,7 +693,7 @@
            new-map-x (clamp shifted-x (* -8 240) 0)]
        (if (not= map-x new-map-x)
            (tset player-ent.state :x new-player-x))
-       (draw-map! {:x 0 :w 240 :sx new-map-x})
+       (draw-map! {:x 0 :w 240 :sx new-map-x :trans 0})
        (draw-entities! self screen-state)
        (if (empty? self.entities)
            ($screen:select! :title))
