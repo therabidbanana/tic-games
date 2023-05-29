@@ -678,17 +678,20 @@
               (mset tile-x tile-y (shift-tile-color tile color)))
           (merge state {: x : y : dx : dy})))))
 
-(fn build-enemy [base-state]
-  {:render draw-entity
-   :react enemy-react
-   :tag :enemy
-   :color :red
-   :collision-box (fn [{: state}] {:x state.x :y state.y :w 16 :h 16})
-   :state (merge {} (or base-state {}))
-   :take-damage! (fn [self bullet]
-                   (tset self.state :hp (- (or self.state.hp 1) 1)))
-   :character
-   {:sprite 384 :trans 0 :w 2 :h 2}})
+(var enemy-sprite-colors {:red 384 :orange 392 :yellow 416 :green 424 :blue 448 :purple 456})
+(fn build-enemy [{: color &as base-state}]
+  (let [color (or color :red)
+        sprite (?. enemy-sprite-colors color)]
+    {:render draw-entity
+     :react enemy-react
+     :tag :enemy
+     :color color
+     :collision-box (fn [{: state}] {:x state.x :y state.y :w 16 :h 16})
+     :state (merge {: color} (or base-state {}))
+     :take-damage! (fn [self bullet]
+                     (tset self.state :hp (- (or self.state.hp 1) 1)))
+     :character
+     {:sprite sprite :trans 0 :w 2 :h 2}}))
 
 (fn shift-all-x [entities x-shift]
   (each [_ ent (ipairs entities)]
@@ -715,7 +718,9 @@
                    :on-draw (fn [tile x y]
                               (if (between? tile 242 247)
                                   (do (self:add-entity!
-                                       (build-enemy {:dx -0.5 :x (- (* x 8) new-map-x) :y (* y 8) :hp 1}))
+                                       (build-enemy {
+                                                     :color (?. color-cycle (- tile 241))
+                                                     :dx -0.5 :x (- (* x 8) new-map-x) :y (* y 8) :hp 1}))
                                       (mset x y 0)
                                       0)
                                   tile)
@@ -921,10 +926,18 @@
 ;; 125:11111000111111001111666611110000111000000c0000000200000000000000
 ;; 128:0000004000000442000044320003422200032222222233222222222222302212
 ;; 129:0000000000000000400000004000000022400000334022202222222012223220
+;; 136:0444444404444444043333330432232204321322033233223333333333033333
+;; 137:4444444044444440333333402232234012312340223323303333333333333033
 ;; 144:23002222000222ff000222220002022200000022000002220000333300000000
 ;; 145:22200320f2222000222020002220200022200000220000003220000000000000
+;; 152:300333333003332200033322000333420003334f000333330000330000003300
+;; 153:33333003423330034233300022333000f2333000333330000033000000330000
+;; 160:000000000000000004444444000000000004444400045f440004550000000044
+;; 161:0000000000000000444444000444400044444440445f40000455400044000000
 ;; 168:0000000000000000006000000666000006677700666077776607777466077777
 ;; 169:0000000000000000666600006666600006666660777666604740666077706660
+;; 176:0000044400000044000000440000000000000004000000000000000000000000
+;; 177:4440000044000000440000004400000040000000440000004000000000000000
 ;; 184:6007777707777677777766777707760070007700000077770000000700000000
 ;; 185:c7c0000077000000667000007770000007770000000000000000000000000000
 ;; 192:0000000011999999015999950999999909959959099999990999999909999999
