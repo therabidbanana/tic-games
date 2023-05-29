@@ -85,7 +85,7 @@
   "Find sum of a collection (or list of arguments)"
   (let [coll (*args a)]
     (accumulate [acc 0 _ v (ipairs coll)]
-      (+ v acc))))
+      (if v (+ v acc) acc))))
 
 (fn clamp [val min max]
   (if (> val max) max
@@ -262,8 +262,8 @@
     (spr sprite x y (or trans -1) scale (or flip 0) (or rotate 0) w h)))
 
 (fn draw-box! [{: w : h : x : y : bg-color : border-color}]
-  (rect x y w h bg-color)
-  (rectb x y w h border-color))
+  (if bg-color (rect x y w h bg-color))
+  (if border-color (rectb x y w h border-color)))
 
 (fn draw-map! [{: w : h : x : y : sx : sy : trans : on-draw : scale}]
   (map (or x 0) (or y 0) (or w 30) (or h 17) (or sx 0) (or sy 0) (or trans -1) (or scale 1) on-draw))
@@ -467,7 +467,7 @@
   (if (not (ui->active?))
       (let [screen-state (or screen-state {})
             entities (or self.entities [])
-            reacted (mapv #(let [up ($:react (merge (or $.state {}) screen-state) entities)]
+            reacted (mapv #(let [up ($:react (merge (or $.state {}) screen-state) self)]
                              (if (= :die up)
                                  nil
                                  (table? up)
@@ -561,29 +561,20 @@
         (- tile dist)
         tile)))
 
-(fn fetch-map-tile [{: x : y : map-x}]
-  (let [tile-x (// (- x map-x) 8)
-        tile-y (// y 8)
-        tile (mget tile-x tile-y)
-        colorable? (between? tile 1 144)]
-    {:x tile-x :y tile-y : tile : colorable?}))
-
-(fn bullet-react [{: color &as bullet} {: map-x : x : y &as state} entities]
+(fn bullet-react [{: color &as bullet} {: map-x : x : y &as state} {: entities &as game}]
   (let [collision   (bullet:collision-box)
         intersected (-?>> (filterv #(= :enemy $.tag) entities)
                           (filterv #(touches? collision ($:collision-box)))
                           first)
         x (+ x state.dx)
         y (+ y state.dy)
-        {:x tile-x :y tile-y
-         : tile : colorable? } (fetch-map-tile {: x : y : map-x})
-        colorable-tile? (and colorable? (not= (tile-color tile) color))]
+        {: would-paint?} (game:fetch-map-tile {: x : y : color})]
     (if intersected
         (do (intersected:take-damage! bullet) :die)
         (not (touches? {:x -10 :y -10 :w 260 :h 200} collision))
         :die
-        colorable-tile?
-        (do (mset tile-x tile-y (shift-tile-color tile color)) :die)
+        would-paint?
+        (do (game:paint-tile! {: x : y : color}) :die)
         (merge state {: x : y}))))
 
 (var palette {:red 2 :orange 3 :yellow 4 :green 6 :blue 9 :purple 1})
@@ -601,7 +592,7 @@
                (rect x y w h (?. palette color)))}))
 
 (var next-color {:red :orange :orange :yellow :yellow :green :green :blue :blue :purple :purple :red})
-(fn player-react [self {: x : y : color : dir &as state} _entities]
+(fn player-react [self {: x : y : color : dir &as state} {: entities &as game}]
   (let [x (if (btn 2) (- x 1) (btn 3) (+ x 1) x)
         y (if (btn 0) (- y 1) (btn 1) (+ y 1) y)
         dir (if (btn 2) -1 (btn 3) 1 (or dir 1))
@@ -611,7 +602,7 @@
         color (if (btnp 5) (?. next-color color) color)]
     (if (btnp 4)
         ;; TODO: Is there a less sneaky way to add entity?
-        (^in _entities (build-bullet {:x (+ x (if left? 0 15)) :y (+ y 10) : color :speed (if left? -2 2)})))
+        (^in entities (build-bullet {:x (+ x (if left? 0 15)) :y (+ y 10) : color :speed (if left? -2 2)})))
     (merge state {: x : y : color : dir})))
 
 (defscreen $screen :pause
@@ -663,19 +654,16 @@
        :trans 0
        :x player-x :y player-y :w 2 :h 2}})
 
-(fn enemy-react [{: color &as self} {: hp : x : y : dx : dy : map-x : ticks &as state} _entities]
+(fn enemy-react [{: color &as self} {: hp : x : y : dx : dy : map-x : ticks &as state} {&as game}]
   (let [x (if dx (+ x dx) x)
         y (if dy (+ y dy) y)
         dx (if (or (< (- x map-x) 1) (> x (* 239 8))) (- 0 dx) dx)
         dy (math.sin (/ ticks 40))
-        {:x tile-x :y tile-y
-         : tile : colorable? } (fetch-map-tile {:x (+ x 7) :y (+ y 7) : map-x})
-        colorable-tile? (and colorable? (not= (tile-color tile) color))]
+        {: would-paint? } (game:fetch-map-tile {:x (+ x 7) :y (+ y 7) : color})]
     (if (<= hp 0)
         :die
         (do
-          (if colorable-tile?
-              (mset tile-x tile-y (shift-tile-color tile color)))
+          (if would-paint? (game:paint-tile! {:x (+ x 7) :y (+ y 7) : color}))
           (merge state {: x : y : dx : dy})))))
 
 (var enemy-sprite-colors {:red 384 :orange 392 :yellow 416 :green 424 :blue 448 :purple 456})
@@ -698,10 +686,29 @@
     (doto ent.state
       (tset :x (- ent.state.x x-shift)))))
 
+(fn draw-hud-colorbar [current]
+  (let [all-tiles (sum (mapv #(or (?. current $) 0) color-cycle))
+        red-portion (* 234 (/ (or current.red 0) all-tiles))
+        orange-portion (* 234 (/ (or current.orange 0) all-tiles))
+        yellow-portion (* 234 (/ (or current.yellow 0) all-tiles))
+        green-portion (* 234 (/ (or current.green 0) all-tiles))
+        blue-portion (* 234 (/ (or current.blue 0) all-tiles))
+        purple-portion (* 234 (/ (or current.purple 0) all-tiles))]
+    (print (.. "Orange tiles" orange-portion) 10 10 13)
+    (print (.. "all tiles" all-tiles) 10 20 13)
+    (draw-box! {:x 3 :y 3 :w red-portion :h 2 :bg-color (?. palette :red)})
+    (draw-box! {:x (sum 3 red-portion) :y 3 :w orange-portion :h 2 :bg-color (?. palette :orange)})
+    (draw-box! {:x (sum 3 red-portion orange-portion) :y 3 :w yellow-portion :h 2 :bg-color (?. palette :yellow)})
+    (draw-box! {:x (sum 3 red-portion orange-portion yellow-portion) :y 3 :w green-portion :h 2 :bg-color (?. palette :green)})
+    (draw-box! {:x (sum 3 red-portion orange-portion yellow-portion green-portion) :y 3 :w blue-portion :h 2 :bg-color (?. palette :blue)})
+    (draw-box! {:x (sum 3 red-portion orange-portion yellow-portion green-portion blue-portion) :y 3 :w purple-portion :h 2 :bg-color (?. palette :purple)})
+    (draw-box! {:x 2 :y 2 :w 236 :h 4 :border-color 12})
+    ))
+
 (defscreen $screen :game
   {:state {}
    :tick
-   (fn [self {: ticks : map-x &as screen-state}]
+   (fn [self {: ticks : map-x : color-bar &as screen-state}]
      ;; (if (btnp 7) ($screen:select! :pause))
      (react-entities! self screen-state)
      (cls 7)
@@ -727,20 +734,41 @@
                               )
                    })
        (draw-entities! self screen-state)
+       (draw-hud-colorbar color-bar)
        (if (empty? self.entities)
            ($screen:select! :title))
        ;; (icollect [_ v (ipairs self.entities)]
        ;;   (if (and (= :enemy v.tag) (> screen-state.ticks 60))
        ;;       (v:take-damage! {})))
        ;; (print (.. "Count " (count self.entities)) 20 20 13 )
-       {:ticks (+ screen-state.ticks 1) :map-x new-map-x}))
+       {:ticks (+ screen-state.ticks 1) :map-x new-map-x : color-bar : map-y}))
    :entities []
    :add-entity! (fn [self ent] (into self.entities [ent]))
+   :fetch-map-tile (fn fetch-map-tile [{: state &as self} {: x : y : color}]
+                     (let [tile-x (// (- x state.map-x) 8)
+                           tile-y (// (+ y (or state.map-y 0)) 8)
+                           tile (mget tile-x tile-y)
+                           colorable? (between? tile 1 144)
+                           tile-color (tile-color tile)
+                           would-paint? (and (not= tile-color :none) (not= color tile-color))]
+                       {:x tile-x :y tile-y : tile : colorable? :color tile-color : would-paint?}))
+   :paint-tile! (fn [{: state &as self} {: x :  y : color &as input}]
+                  (let [{:x tile-x :y tile-y
+                         :color tile-color : would-paint?
+                         : tile : colorable? } (self:fetch-map-tile input)
+                        in-color (or (?. state.color-bar color) 0)
+                        out-color (or (?. state.color-bar tile-color) 0)]
+                    (if would-paint?
+                        (do
+                          (doto state.color-bar
+                            (tset color (+ in-color 1))
+                            (tset tile-color (max (- out-color 1) 0)))
+                          (mset tile-x tile-y (shift-tile-color tile color))))))
    :prepare
    (fn prepare-game [self]
      (poke 0x03FF8 10)
      (tset self :entities [])
-     (tset self :state {:ticks 0 :map-x -160})
+     (tset self :state {:ticks 0 :map-x -160 :color-bar {} :map-y 0})
      ($ui:clear-all!)
      (self:add-entity! (merge player {:state {:x 96 :y 50 :color :orange}}))
      (self:add-entity! (build-enemy {:dx -0.5 :x 200 :y 40 :hp 1}))
