@@ -764,12 +764,25 @@
                             (tset color (+ in-color 1))
                             (tset tile-color (max (- out-color 1) 0)))
                           (mset tile-x tile-y (shift-tile-color tile color))))))
+   :recalculate-color-bar! (fn [{: state &as self}]
+                             (let [{: map-y} state
+                                   color-bar {}]
+                               (for [x 0 239]
+                                 (for [y 0 16]
+                                   (let [tile-color (tile-color (mget x y))
+                                         curr-val (or (?. color-bar tile-color) 0)]
+                                     (if (not= tile-color :none)
+                                         (tset color-bar
+                                               tile-color
+                                               (+ curr-val 1))))))
+                               (tset state :color-bar color-bar)))
    :prepare
    (fn prepare-game [self]
      (poke 0x03FF8 10)
      (tset self :entities [])
      (tset self :state {:ticks 0 :map-x -160 :color-bar {} :map-y 0})
      ($ui:clear-all!)
+     (self:recalculate-color-bar!)
      (self:add-entity! (merge player {:state {:x 96 :y 50 :color :orange}}))
      (self:add-entity! (build-enemy {:dx -0.5 :x 200 :y 40 :hp 1}))
      (self:add-entity! (build-enemy {:dx -0.5 :dy 1 :x 240 :y 100 :hp 1}))
