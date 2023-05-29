@@ -561,6 +561,13 @@
         (- tile dist)
         tile)))
 
+(fn fetch-map-tile [{: x : y : map-x}]
+  (let [tile-x (// (- x map-x) 8)
+        tile-y (// y 8)
+        tile (mget tile-x tile-y)
+        colorable? (between? tile 1 144)]
+    {:x tile-x :y tile-y : tile : colorable?}))
+
 (fn bullet-react [{: color &as bullet} {: map-x : x : y &as state} entities]
   (let [collision   (bullet:collision-box)
         intersected (-?>> (filterv #(= :enemy $.tag) entities)
@@ -568,11 +575,9 @@
                           first)
         x (+ x state.dx)
         y (+ y state.dy)
-        tile-x (// (- x map-x) 8)
-        tile-y (// y 8)
-        tile (mget tile-x tile-y)
-        colorable-tile? (and (between? tile 1 144)
-                             (not= (tile-color tile) color))]
+        {:x tile-x :y tile-y
+         : tile : colorable? } (fetch-map-tile {: x : y : map-x})
+        colorable-tile? (and colorable? (not= (tile-color tile) color))]
     (if intersected
         (do (intersected:take-damage! bullet) :die)
         (not (touches? {:x -10 :y -10 :w 260 :h 200} collision))
@@ -658,19 +663,26 @@
        :trans 0
        :x player-x :y player-y :w 2 :h 2}})
 
-(fn enemy-react [self {: hp : x : y : dx : dy : ticks &as state} _entities]
+(fn enemy-react [{: color &as self} {: hp : x : y : dx : dy : map-x : ticks &as state} _entities]
   (let [x (if dx (+ x dx) x)
         y (if dy (+ y dy) y)
-        dx (if (or (< x 1) (> x (* 239 8))) (- 0 dx) dx)
-        dy (math.sin (/ ticks 40))]
+        dx (if (or (< (- x map-x) 1) (> x (* 239 8))) (- 0 dx) dx)
+        dy (math.sin (/ ticks 40))
+        {:x tile-x :y tile-y
+         : tile : colorable? } (fetch-map-tile {:x (+ x 7) :y (+ y 7) : map-x})
+        colorable-tile? (and colorable? (not= (tile-color tile) color))]
     (if (<= hp 0)
         :die
-        (merge state {: x : y : dx : dy}))))
+        (do
+          (if colorable-tile?
+              (mset tile-x tile-y (shift-tile-color tile color)))
+          (merge state {: x : y : dx : dy})))))
 
 (fn build-enemy [base-state]
   {:render draw-entity
    :react enemy-react
    :tag :enemy
+   :color :red
    :collision-box (fn [{: state}] {:x state.x :y state.y :w 16 :h 16})
    :state (merge {} (or base-state {}))
    :take-damage! (fn [self bullet]
@@ -703,7 +715,7 @@
                    :on-draw (fn [tile x y]
                               (if (between? tile 242 247)
                                   (do (self:add-entity!
-                                       (build-enemy {:dx 0.5 :x (- (* x 8) new-map-x) :y (* y 8) :hp 1}))
+                                       (build-enemy {:dx -0.5 :x (- (* x 8) new-map-x) :y (* y 8) :hp 1}))
                                       (mset x y 0)
                                       0)
                                   tile)
