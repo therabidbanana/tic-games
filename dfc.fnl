@@ -556,7 +556,7 @@
 (fn player-react [self {: x : y : color &as state} _entities]
   (let [x (if (btn 2) (- x 1) (btn 3) (+ x 1) x)
         y (if (btn 0) (- y 1) (btn 1) (+ y 1) y)
-        x (clamp x 0 240)
+        x (clamp x 0 224)
         y (clamp y -8 128)
         color (if (btnp 5) (?. next-color color) color)
         ]
@@ -605,7 +605,7 @@
       :react player-react
       :collision-box (fn [{: state}] {:x state.x :y state.y :w 16 :h 16})
       :state {:x player-x :y player-y :color :yellow}
-      :tags [:player]
+      :tag :player
       :character
       {;; Test weird blink patterns
        :animate {:period 200 :steps [{:t 0 :index 1} {:t 100 :index 2} {:t 112 :index 1}
@@ -635,30 +635,37 @@
    {:sprite 432 :trans 0 :w 2 :h 2}})
 
 (defscreen $screen :game
-  {:state {:ticks t}
+  {:state {}
    :tick
-   (fn [self {: ticks &as screen-state}]
+   (fn [self {: ticks : map-x &as screen-state}]
      ;; (if (btnp 7) ($screen:select! :pause))
      (react-entities! self screen-state)
      (cls 0)
-     (draw-map! {:x (* (// ticks 64) 8) :w 38 :sx (- 0 (% ticks 64))})
-     (draw-entities! self screen-state)
-     (if (empty? self.entities)
-         ($screen:select! :title))
-     ;; (icollect [_ v (ipairs self.entities)]
-     ;;   (if (and (= :enemy v.tag) (> screen-state.ticks 60))
-     ;;       (v:take-damage! {})))
-     ;; (print (.. "Count " (count self.entities)) 20 20 13 )
-     {:ticks (+ screen-state.ticks 1)})
+     (let [player-ent (->> (filterv #(= :player $.tag) self.entities) first)
+           new-player-x (clamp player-ent.state.x 80 160)
+           map-shift (- player-ent.state.x new-player-x)
+           shifted-x (- map-x map-shift)
+           new-map-x (clamp shifted-x (* -8 240) 0)]
+       (if (not= map-x new-map-x)
+           (tset player-ent.state :x new-player-x))
+       (draw-map! {:x 0 :w 240 :sx new-map-x})
+       (draw-entities! self screen-state)
+       (if (empty? self.entities)
+           ($screen:select! :title))
+       ;; (icollect [_ v (ipairs self.entities)]
+       ;;   (if (and (= :enemy v.tag) (> screen-state.ticks 60))
+       ;;       (v:take-damage! {})))
+       ;; (print (.. "Count " (count self.entities)) 20 20 13 )
+       {:ticks (+ screen-state.ticks 1) :map-x new-map-x}))
    :entities []
    :add-entity! (fn [self ent] (into self.entities [ent]))
    :prepare
    (fn prepare-game [self]
      (poke 0x03FF8 10)
      (tset self :entities [])
-     (tset self :state {:ticks 0})
+     (tset self :state {:ticks 0 :map-x -160})
      ($ui:clear-all!)
-     (self:add-entity! (merge player {:state {:x 0 :y 20 :color :orange}}))
+     (self:add-entity! (merge player {:state {:x 96 :y 50 :color :orange}}))
      (self:add-entity! (build-enemy {:dx -0.5 :x 200 :y 40 :hp 1}))
      (self:add-entity! (build-enemy {:dx -0.5 :dy 1 :x 240 :y 100 :hp 1}))
      )})
