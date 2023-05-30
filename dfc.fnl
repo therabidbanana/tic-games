@@ -694,8 +694,6 @@
         green-portion (* 234 (/ (or current.green 0) all-tiles))
         blue-portion (* 234 (/ (or current.blue 0) all-tiles))
         purple-portion (* 234 (/ (or current.purple 0) all-tiles))]
-    (print (.. "Orange tiles" orange-portion) 10 10 13)
-    (print (.. "all tiles" all-tiles) 10 20 13)
     (draw-box! {:x 3 :y 3 :w red-portion :h 2 :bg-color (?. palette :red)})
     (draw-box! {:x (sum 3 red-portion) :y 3 :w orange-portion :h 2 :bg-color (?. palette :orange)})
     (draw-box! {:x (sum 3 red-portion orange-portion) :y 3 :w yellow-portion :h 2 :bg-color (?. palette :yellow)})
@@ -734,6 +732,8 @@
                               )
                    })
        (draw-entities! self screen-state)
+       (if (= (% ticks 60) 0)
+           (self:recalculate-color-bar!))
        (draw-hud-colorbar color-bar)
        (if (empty? self.entities)
            ($screen:select! :title))
