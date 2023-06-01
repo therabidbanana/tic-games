@@ -545,7 +545,10 @@
   )
 
 (fn draw-entity [{ : character &as ent} state _entities]
-  (draw-sprite! (merge character state)))
+  (let [shifted-x (- state.x (or state.screen-x 0))
+        shifted-y (- state.y (or state.screen-y 0))]
+    (draw-sprite! (merge (merge character state) {:x shifted-x
+                                                  :y shifted-y}))))
 
 ;; TODO: Start figuring out tile coloration
 (fn tile-color [tile]
@@ -578,7 +581,7 @@
         (- tile dist)
         tile)))
 
-(fn bullet-react [{: color &as bullet} {: map-x : x : y &as state} {: entities &as game}]
+(fn bullet-react [{: color &as bullet} {: x : y &as state} {: entities &as game}]
   (let [collision   (bullet:collision-box)
         intersected (-?>> (filterv #(= :enemy $.tag) entities)
                           (filterv #(touches? collision ($:collision-box)))
@@ -606,8 +609,10 @@
      :state (merge state {: dx : dy : speed : color :h 2 :w 2})
      :collision-box (fn [{: state}] {:x state.x :y state.y :w 2 :h 2})
      :color color
-     :render (fn [{&as bullet} {: x : y : color : h : w} _e]
-               (rect x y w h (?. palette color)))}))
+     :render (fn [{&as bullet} {: x : y : color : h : w : screen-x : screen-y} _e]
+               (let [shifted-x (- x screen-x)
+                     shifted-y (- y screen-y)]
+                 (rect x y w h (?. palette color))))}))
 
 (var next-color {:red :orange :orange :yellow :yellow :green :green :blue :blue :purple :purple :red})
 (var prev-color {:red :purple :orange :red :yellow :orange :green :yellow :blue :green :purple :blue})
@@ -715,10 +720,15 @@
      {:render (fn draw-player [{: character &as ent} {: dir : color : invuln &as state} _others]
                 (let [sprite (if (> (% (or invuln 0) 33) 29)
                                  (?. sprite-colors (?. next-color color))
+                                 (and (< (% (or invuln 0) 33) 9) (not= 0 invuln))
+                                 (?. sprite-colors (?. prev-color color))
                                  (?. sprite-colors color))
                       flip (if (> (or dir 1) 0) 0 1)
+                      shifted-x (- state.x state.screen-x)
+                      shifted-y (- state.y state.screen-y)
                       ]
-                  (draw-sprite! (merge (merge character state) {: sprite : flip}))))
+                  (draw-sprite! (merge (merge character state)
+                                       {:x shifted-x :y shifted-y : sprite : flip}))))
       :react player-react
       :collision-box (fn [{: state}] {:x (+ state.x 5) :y (+ state.y 4) :w 10 :h 10})
       :state {:x player-x :y player-y :color :yellow}
@@ -730,10 +740,10 @@
        :trans 0
        :x player-x :y player-y :w 2 :h 2}})
 
-(fn enemy-react [{: color &as self} {: hp : x : y : dx : dy : map-x : ticks &as state} {&as game}]
+(fn enemy-react [{: color &as self} {: hp : x : y : dx : dy : ticks &as state} {&as game}]
   (let [x (if dx (+ x dx) x)
-        y (if dy (+ y dy) y)
-        dx (if (or (< (- x map-x) 1) (> x (* 239 8))) (- 0 dx) dx)
+        y (clamp (if dy (+ y dy) y) 1 120)
+        dx (if (or (< x 1) (> x (* 239 8))) (- 0 dx) dx)
         dy (if (or (< y 1) (> y 130))
                (- 0 (or dy 1))
                (math.sin (/ ticks 40)))
@@ -760,13 +770,13 @@
      {:sprite sprite :trans 0 :w 2 :h 2}}))
 
 (fn portal-react [{: color &as self}
-                  {: hp : cycle : x : y : dx : dy : map-x : ticks &as state}
+                  {: hp : cycle : x : y : dx : dy :  ticks &as state}
                   {: entities &as game}]
   (let [x (if dx (+ x dx) x)
-        y (if dy (+ y dy) y)
-        dx (if (or (< (- x map-x) 1) (> x (* 239 8))) (- 0 dx) dx)
+        y (clamp (if dy (+ y dy) y) 1 125)
+        dx (if (or (< x 1) (> x (* 239 8))) (- 0 dx) dx)
         dy (math.sin (/ ticks 40))
-        cycle (or cycle 197)
+        cycle (or cycle (+ 197 (// (* (math.random) 90) 1)))
         {: would-paint? } (game:fetch-map-tile {:x (+ x 7) :y (+ y 7) : color})
         player (->> (filterv #(= :player $.tag) entities)
                     first)]
@@ -797,10 +807,10 @@
      :character
      {:sprite sprite :trans 0 :w 1 :h 1 :scale 2}}))
 
-(fn shift-all-x [entities x-shift]
-  (each [_ ent (ipairs entities)]
-    (doto ent.state
-      (tset :x (- ent.state.x x-shift)))))
+;; (fn shift-all-x [entities x-shift]
+;;   (each [_ ent (ipairs entities)]
+;;     (doto ent.state
+;;       (tset :x (- ent.state.x x-shift)))))
 
 (fn draw-hud-colorbar [current]
   (let [all-tiles (sum (mapv #(or (?. current $) 0) color-cycle))
@@ -822,41 +832,42 @@
     (draw-box! {:x 2 :y 2 :w 236 :h 4 :border-color 12})
     ))
 
-(fn draw-sky! [{: ticks : map-x}]
+(fn draw-sky! [{: ticks : screen-x}]
+  (print (.. "screen-x:" screen-x) 10 20 13)
   )
 
 (fn draw-stats [first-player]
-  (print (.. "HP:" (or first-player.state.hp 3)) 10 10 13))
+  (print (.. "HP:" (or first-player.state.hp 3)) 10 10 13)
+  (print (.. "x:" first-player.state.x) 40 10 13)
+  )
 
-(fn spawn-players! [{: entities &as self}]
-  (let [player-ent (->> (filterv #(= :player $.tag) self.entities) first)
-        ]
-    (if player-ent :noop
+(fn spawn-players! [{: entities &as self} during-game]
+  (let [player-ent (->> (filterv #(= :player $.tag) self.entities) first)]
+    (if player-ent
+        :noop
         (do
-          (tset self.state :map-x 0)
           (for [x 0 239]
             (for [y 0 16]
               (let [tile (mget x y)]
                 (if (= 240 tile)
-                    (self:add-entity! (merge player {:state {:invuln 200 :x (- (* x 8) 120) :y (* y 8) :color :orange}}))))))))))
+                    (let [map-x (+ (- 0 (* x 8)) 120)]
+                      (tset self.state
+                            :screen-x map-x)
+                      (self:add-entity! (merge player {:state {:invuln (if during-game 200 0) :x 120 :y (* y 8) :color :orange}})))))))))))
 
 (defscreen $screen :game
   {:state {}
    :tick
-   (fn [self {: ticks : map-x : color-bar &as screen-state}]
+   (fn [self {: ticks : color-bar : screen-x : screen-y &as screen-state}]
      ;; (if (btnp 7) ($screen:select! :pause))
      (react-entities! self screen-state)
-     (spawn-players! self)
+     (spawn-players! self true)
      ;; (draw-sky! screen-state)
      (let [player-ent (->> (filterv #(= :player $.tag) self.entities) first)
-           new-player-x (clamp player-ent.state.x 80 160)
-           map-shift (- player-ent.state.x new-player-x)
-           shifted-x (- map-x map-shift)
-           new-map-x (clamp shifted-x (* -8 240) 0)]
-       (if (not= map-x new-map-x)
-           (shift-all-x self.entities map-shift)
-           ;; (tset player-ent.state :x new-player-x)
-           )
+           player-offset (- player-ent.state.x screen-x)
+           diff (- (clamp player-offset 80 160) player-offset)
+           shifted-x (- screen-state.screen-x diff)
+           new-screen-x (clamp shifted-x 0 (- (* 8 240) 240))]
        (if (= (% ticks 60) 0)
            (self:recalculate-color-bar!))
        (if (empty? self.entities)
@@ -866,19 +877,19 @@
        ;;       (v:take-damage! {})))
        ;; (print (.. "Count " (count self.entities)) 20 20 13 )
        (cls 8) ;; Allow pretty sky
-       {:ticks (+ screen-state.ticks 1) :map-x new-map-x : color-bar : map-y}))
+       {:ticks (+ screen-state.ticks 1) :screen-x new-screen-x : color-bar : screen-y}))
    :draw
-   (fn [self {: map-x : map-y : color-bar &as screen-state}]
+   (fn [self {: screen-x : screen-y : color-bar &as screen-state}]
      (let [player-ent (->> (filterv #(= :player $.tag) self.entities) first)]
        (draw-stats player-ent)
        (draw-sky! screen-state)
-       (draw-map! {:x 0 :w 240 :sx map-x :trans 0
+       (draw-map! {:x 0 :w 240 :sx (- 0 screen-x) :trans 0
                    :on-draw (fn [tile x y]
                               (if (between? tile 242 247)
                                   (do (self:add-entity!
                                        (build-portal {
                                                       :color (?. color-cycle (- tile 241))
-                                                      :dx -0.5 :x (- (* x 8) map-x) :y (* y 8) :hp 1}))
+                                                      :dx -0.5 :x (* x 8) :y (* y 8) :hp 1}))
                                       (mset x y 0)
                                       0)
                                   tile)
@@ -890,15 +901,15 @@
    :entities []
    :add-entity! (fn [self ent] (into self.entities [ent]))
    :fetch-map-tile (fn fetch-map-tile [{: state &as self} {: x : y : color}]
-                     (let [tile-x (// (- x state.map-x) 8)
-                           tile-y (// (+ y (or state.map-y 0)) 8)
+                     (let [tile-x (// x 8)
+                           tile-y (// y 8)
                            tile (mget tile-x tile-y)
                            colorable? (between? tile 1 144)
                            tile-color (tile-color tile)
                            solid? (fget tile 0)
                            would-paint? (and (not= tile-color :none) (not= color tile-color))]
-                       {:sx (+ (* 8 tile-x) state.map-x)
-                        :sy (- (* 8 tile-y) (or state.map-y 0))
+                       {:sx (+ (* 8 tile-x) state.screen-x)
+                        :sy (- (* 8 tile-y) (or state.screen-y 0))
                         :x tile-x :y tile-y : solid? : tile : colorable? :color tile-color : would-paint?}))
    :paint-tile! (fn [{: state &as self} {: x :  y : color &as input}]
                   (let [{:x tile-x :y tile-y
@@ -929,10 +940,10 @@
    (fn prepare-game [self]
      (poke 0x03FF8 0)
      (tset self :entities [])
-     (tset self :state {:ticks 0 :map-x -160 :color-bar {} :map-y 0})
+     (tset self :state {:ticks 0 :screen-x 0 :color-bar {} :screen-y 0})
      ($ui:clear-all!)
      (self:recalculate-color-bar!)
-     (spawn-players! self)
+     (spawn-players! self false)
      ;; (self:add-entity! (build-enemy {:dx -0.5 :x 200 :y 40 :hp 1}))
      ;; (self:add-entity! (build-enemy {:dx -0.5 :dy 1 :x 240 :y 100 :hp 1}))
      )})
