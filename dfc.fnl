@@ -189,6 +189,20 @@
    (< (+ ent1.y 0) (+ ent2.y ent2.h))
    (> (+ ent1.y ent1.h) (+ ent2.y 0))))
 
+(fn collision-sides [{&as ent1} {&as ent2}]
+  {:top (and (> ent1.y ent2.y)
+             (< (+ ent1.y 0) (+ ent2.y ent2.h))
+             (> (+ ent1.y ent1.h) (+ ent2.y 0)))
+   :bottom (and (< ent1.y ent2.y)
+                (< (+ ent1.y 0) (+ ent2.y ent2.h))
+                (> (+ ent1.y ent1.h) (+ ent2.y 0)))
+   :right (and (< ent1.x ent2.x)
+                (< (+ ent1.x 0) (+ ent2.x ent2.w))
+                (> (+ ent1.x ent1.w) (+ ent2.x 0)))
+   :left (and (> ent1.x ent2.x)
+              (< (+ ent1.x 0) (+ ent2.x ent2.w))
+              (> (+ ent1.x ent1.w) (+ ent2.x 0)))})
+
 ;; --------------------
 ;; End Base Functions
 ;; --------------------
@@ -568,7 +582,7 @@
   (let [collision   (bullet:collision-box)
         intersected (-?>> (filterv #(= :enemy $.tag) entities)
                           (filterv #(touches? collision ($:collision-box)))
-                          (filterv #(= $.color color))
+                          (filterv #(not= $.color color))
                           first)
         x (+ x state.dx)
         y (+ y state.dy)
@@ -601,36 +615,60 @@
   (let [max-speed 1.5
         drag 0.05
         add-speed 0.5
-        gravity 0.005
+        gravity 0.05
         dx (or dx 0)
         dy (or dy 0)
         dx (if (btn 2) (max (- dx add-speed) (* -1 max-speed))
                (btn 3) (min (+ dx add-speed) max-speed)
-               (> dx 0) (min (- dx drag) 0)
-               (max (+ dx drag) 0)
+               (< dx 0) (min (+ dx drag) 0)
+               (max (- dx drag) 0)
                )
-        dy (if (btn 0) (max (- dy add-speed) -1)
-               (btn 1) 1
-               (min (+ (max dy -0.1) gravity) 0.15))
+        dy (if (btn 0) (min -1 dy)
+               (btn 1) (min (+ dy add-speed) max-speed)
+               (< dy -2) (+ dy (* 4 gravity))
+               (< dy 0.15) (+ dy gravity)
+               (min (+ dy gravity) 0.15))
         x (+ x dx)
         y (+ y dy)
         dir (if (< dx -0.1) -1 (> dx 0.1) 1 (or dir 1))
         left? (= dir -1)
         x (clamp x 0 224)
-        y (clamp y -8 128)
+        y (clamp y -8 122)
         collision   (self:collision-box)
         intersected (-?>> (filterv #(= :enemy $.tag) entities)
                           (filterv #(touches? collision ($:collision-box)))
                           first)
         invuln (or invuln 0)
-        damaged? (and intersected (<= invuln 0))
+        collisions (if intersected
+                       (collision-sides (intersected:collision-box) collision))
+        damaged? (and intersected (<= invuln 0) (not collisions.top))
+        bounced? (and intersected collisions.top)
         hp (or hp 3)
         hp (if damaged? (- hp 1) hp)
         color (if (btnp 6) (?. prev-color color)
-                  (btnp 7) (?. next-color color)
+                  (btnp 5) (?. next-color color)
                   damaged? intersected.color
                   color)
-        new-invuln (if damaged? 200 (max (- (or invuln 1) 1) 0))]
+        new-invuln (if damaged? 200 (max (- (or invuln 1) 1) 0))
+        dy (if (and bounced? (btn 1)) -4 bounced? -2.5 dy)
+        y (if bounced? (+ y dy) y)
+        ;; Handle bouncing
+        foot-tile (game:fetch-map-tile {:x (+ x 7) :y (+ y 14) : color})
+        dy (if (and foot-tile.solid? foot-tile.would-paint?) (min dy 0) dy)
+        y  (if (and foot-tile.solid? foot-tile.would-paint?) (- foot-tile.sy 14) y)
+        head-tile (game:fetch-map-tile {:x (+ x 7) :y (+ y 2) : color})
+        dy (if (and head-tile.would-paint? head-tile.solid?) (max dy 0.15) dy)
+        y  (if (and head-tile.would-paint? head-tile.solid?) (+ head-tile.sy 6) y)
+        right-tile (game:fetch-map-tile {:x (+ x 14) :y (+ y 6) : color})
+        dx (if (and right-tile.would-paint? right-tile.solid?) (min dx 0) dx)
+        x  (if (and right-tile.would-paint? right-tile.solid?) (- right-tile.sx 14) x)
+        left-tile (game:fetch-map-tile {:x x :y (+ y 6) : color})
+        dx (if (and left-tile.would-paint? left-tile.solid?) (max dx 0) dx)
+        x  (if (and left-tile.would-paint? left-tile.solid?) (+ left-tile.sx 8) x)
+        ]
+    (if bounced?
+        (do
+          (intersected:take-damage! {: color : x : y})))
     (if (btnp 4)
         ;; TODO: Is there a less sneaky way to add entity?
         (^in entities (build-bullet {:x (+ x (if left? 0 15)) :y (+ y 10) : color :speed (if left? -2 2)})))
@@ -696,7 +734,9 @@
   (let [x (if dx (+ x dx) x)
         y (if dy (+ y dy) y)
         dx (if (or (< (- x map-x) 1) (> x (* 239 8))) (- 0 dx) dx)
-        dy (math.sin (/ ticks 40))
+        dy (if (or (< y 1) (> y 130))
+               (- 0 (or dy 1))
+               (math.sin (/ ticks 40)))
         {: would-paint? } (game:fetch-map-tile {:x (+ x 7) :y (+ y 7) : color})]
     (if (<= hp 0)
         :die
@@ -719,22 +759,27 @@
      :character
      {:sprite sprite :trans 0 :w 2 :h 2}}))
 
-(fn portal-react [{: color &as self} {: hp : cycle : x : y : dx : dy : map-x : ticks &as state} {&as game}]
+(fn portal-react [{: color &as self}
+                  {: hp : cycle : x : y : dx : dy : map-x : ticks &as state}
+                  {: entities &as game}]
   (let [x (if dx (+ x dx) x)
         y (if dy (+ y dy) y)
         dx (if (or (< (- x map-x) 1) (> x (* 239 8))) (- 0 dx) dx)
         dy (math.sin (/ ticks 40))
         cycle (or cycle 197)
-        {: would-paint? } (game:fetch-map-tile {:x (+ x 7) :y (+ y 7) : color})]
+        {: would-paint? } (game:fetch-map-tile {:x (+ x 7) :y (+ y 7) : color})
+        player (->> (filterv #(= :player $.tag) entities)
+                    first)]
     (if (<= hp 0)
         :die
         (do
           (if would-paint? (game:paint-tile! {:x (+ x 7) :y (+ y 7) : color}))
-          (if (= (% ticks cycle) 0) (game:add-entity! (build-enemy {:color color
-                                                                    :dx (* -1 (math.random))
-                                                                    :x (+ x (- 10 (* 10 (math.random))))
-                                                                    :y (+ y (- 10 (* 10 (math.random))))
-                                                                    :hp 1})))
+          (if (and (= (% ticks cycle) 0) (< (math.abs (- player.state.x x)) 240))
+              (game:add-entity! (build-enemy {:color color
+                                              :dx (* -1 (math.random))
+                                              :x (+ x (- 10 (* 10 (math.random))))
+                                              :y (+ y (- 10 (* 10 (math.random))))
+                                              :hp 1})))
           (merge state {: x : y : dx : dy : cycle})))))
 
 (var enemy-portal-colors {:red 32 :orange 40 :yellow 80 :green 88 :blue 128 :purple 136})
@@ -850,8 +895,11 @@
                            tile (mget tile-x tile-y)
                            colorable? (between? tile 1 144)
                            tile-color (tile-color tile)
+                           solid? (fget tile 0)
                            would-paint? (and (not= tile-color :none) (not= color tile-color))]
-                       {:x tile-x :y tile-y : tile : colorable? :color tile-color : would-paint?}))
+                       {:sx (+ (* 8 tile-x) state.map-x)
+                        :sy (- (* 8 tile-y) (or state.map-y 0))
+                        :x tile-x :y tile-y : solid? : tile : colorable? :color tile-color : would-paint?}))
    :paint-tile! (fn [{: state &as self} {: x :  y : color &as input}]
                   (let [{:x tile-x :y tile-y
                          :color tile-color : would-paint?
@@ -954,25 +1002,25 @@
 ;; 097:0888888888aaaaaa8aa999998a9999998a9999998a9999998a9999998a999999
 ;; 098:88888888aaaaaaaa999999999999999999999999999999999999999999999999
 ;; 099:88888880aaaaaa8899999aa8999999a8999999a8999999a8999999a8999999a8
-;; 105:0888888888222222822122118211111182111222821111118222211182111111
-;; 106:8888888822222222111111111122211121111111111111111112222211111111
-;; 107:8888888022222288111112281122112811111128221111281111112811122128
+;; 105:0888888888221111811111118111111181111112811111118112211181111111
+;; 106:8888888811111111111111221111111121111111111111111111111111111111
+;; 107:8888888011111188111111181122111811111118111111181111122811111118
 ;; 112:0000000000000000008888800089998008899988009999900099b9900099b990
 ;; 113:8a9999998a9999998a9999998a9999998a9999998a9999998a9999998a999999
 ;; 114:9999999999999b99999999999999999999aa999999ba99999999999999999999
 ;; 115:999999a8999999a899a999a899b999a8999999a8999999a8999999a8999999a8
 ;; 120:0000000000000000001111000013110000111100000110000003100000031000
-;; 121:8211111182122221821111118211111282111111821111118222211182111111
-;; 122:1111111111222211111111112221112211111111112222111111111122211111
-;; 123:1111112812222128111111282111222811111128111111281222212811111128
+;; 121:8111111181111111811111118111111181111222811111118111111181111111
+;; 122:1111111111111221111111111111111121111111111111111111111111111111
+;; 123:1111111811111118111111182111111811111118111111181111122811111118
 ;; 128:0099990009000000900999009090009090909090900990909000009009999900
 ;; 129:8a9999998a9999998a9999998a999ab98a999aa98aa9999988aaaaaa08888888
 ;; 130:999999999999999999999999999999999999999999999999aaaaaaaa88888888
 ;; 131:999999a8999999a8999999a8999999a8999999a89999aaa8aaaaaa8888888880
 ;; 136:0011110001000000100111001010001010101010100110101000001001111100
-;; 137:8211111182122211821111118211112282122111822111118822222208888888
-;; 138:1111111112222111111111222111111111122211111111112222222288888888
-;; 139:1122212811111128211111281111112812211128111122282222228888888880
+;; 137:8111111181221111811111118111112281111111811111118811111108888888
+;; 138:1111111111111111111111112111111111111111111112211111111188888888
+;; 139:1111111822211118111111181111111811122118111111181111118888888880
 ;; 185:7666766676666776766666677666666676666666766666667666677676666667
 ;; 186:6666666766666777766676676757666766776667666676676666676767666667
 ;; 201:7666766676666776766666677666666676666666766666667666677676666667
@@ -1155,7 +1203,11 @@
 ;; 001:300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200
 ;; </TRACKS>
 
+;; <FLAGS>
+;; 000:00101010000000000010101000000000001010100000000000101010000000000010101000000000001010100000000000101010000000000010101000000000001010100000000000101010000000000010101000000000001010100000000000101010000000000010101000000000001010100000000000101010000000000010101000000000001010100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+;; </FLAGS>
+
 ;; <PALETTE>
-;; 000:1a1c2c5d275db13e53ef7d57ffcd75a7f07038b76425717929366f3b5dc941a6f673eff7f4f4f494b0c2566c86333c57
+;; 000:1a1c2c710c95b13e53ef7d57ffcd75a7f07038b76425717929366f3b5dc941a6f673eff7f4f4f494b0c2566c86333c57
 ;; </PALETTE>
 
