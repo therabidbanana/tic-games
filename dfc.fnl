@@ -555,7 +555,7 @@
   (let [col (% tile 16)
         row (// tile 16)
         secondary? (>= col 8)]
-    (if (>= row 9)
+    (if (>= row 12)
         :none
         (= tile 0)
         :none
@@ -563,12 +563,16 @@
         (if secondary? :orange :red)
         (< row 6)
         (if secondary? :green :yellow)
+        (< row 9)
+        (if secondary? :purple :blue)
         :else
-        (if secondary? :purple :blue))))
+        (if secondary? :grey :none)
+        )))
 
 (var tile-starts {:red 0     :orange 8
                   :yellow 48 :green 56
-                  :blue 96   :purple 104})
+                  :blue 96   :purple 104
+                  :grey 152})
 
 (fn shift-tile-color [tile color]
   (let [col (% tile 16)
@@ -617,6 +621,10 @@
 
 (var next-color {:red :orange :orange :yellow :yellow :green :green :blue :blue :purple :purple :red})
 (var prev-color {:red :purple :orange :red :yellow :orange :green :yellow :blue :green :purple :blue})
+
+(fn player-collides? [tile]
+  (and tile.solid? (or tile.would-paint? (= tile.color :grey))))
+
 (fn player-react [self {: x : y : dx : dy : color : dir : hp : invuln &as state} {: entities &as game}]
   (let [max-speed 1.5
         drag 0.05
@@ -660,17 +668,17 @@
         y (if bounced? (+ y dy) y)
         ;; Handle bouncing
         foot-tile (game:fetch-map-tile {:x (+ x 7) :y (+ y 14) : color})
-        dy (if (and foot-tile.solid? foot-tile.would-paint?) (min dy 0) dy)
-        y  (if (and foot-tile.solid? foot-tile.would-paint?) (- foot-tile.y 14) y)
+        dy (if (player-collides? foot-tile) (min dy 0) dy)
+        y  (if (player-collides? foot-tile) (- foot-tile.y 14) y)
         head-tile (game:fetch-map-tile {:x (+ x 7) :y (+ y 2) : color})
-        dy (if (and head-tile.would-paint? head-tile.solid?) (max dy 0.15) dy)
-        y  (if (and head-tile.would-paint? head-tile.solid?) (+ head-tile.y 6) y)
+        dy (if (player-collides? head-tile) (max dy 0.15) dy)
+        y  (if (player-collides? head-tile) (+ head-tile.y 6) y)
         right-tile (game:fetch-map-tile {:x (+ x 14) :y (+ y 6) : color})
-        dx (if (and right-tile.would-paint? right-tile.solid?) (min dx 0) dx)
-        x  (if (and right-tile.would-paint? right-tile.solid?) (- right-tile.x 14) x)
+        dx (if (player-collides? right-tile) (min dx 0) dx)
+        x  (if (player-collides? right-tile) (- right-tile.x 14) x)
         left-tile (game:fetch-map-tile {:x x :y (+ y 6) : color})
-        dx (if (and left-tile.would-paint? left-tile.solid?) (max dx 0) dx)
-        x  (if (and left-tile.would-paint? left-tile.solid?) (+ left-tile.x 8) x)
+        dx (if (player-collides? left-tile) (max dx 0) dx)
+        x  (if (player-collides? left-tile) (+ left-tile.x 8) x)
         ]
     (if bounced?
         (do
@@ -824,15 +832,18 @@
      {:sprite sprite :trans 0 :w 1 :h 1 :scale 2}}))
 
 (fn draw-hud-colorbar [current]
-  (let [all-tiles (sum (mapv #(or (?. current $) 0) color-cycle))
+  (let [all-tiles (+ (sum (mapv #(or (?. current $) 0) color-cycle))
+                     (or current.grey 0))
         red-portion (* 234 (/ (or current.red 0) all-tiles))
         orange-portion (* 234 (/ (or current.orange 0) all-tiles))
         yellow-portion (* 234 (/ (or current.yellow 0) all-tiles))
         green-portion (* 234 (/ (or current.green 0) all-tiles))
         blue-portion (* 234 (/ (or current.blue 0) all-tiles))
-        purple-portion (* 234 (/ (or current.purple 0) all-tiles))]
+        purple-portion (* 234 (/ (or current.purple 0) all-tiles))
+        grey-portion (* 234 (/ (or current.grey 0) all-tiles))
+        ]
     ;; (print (.. "All tiles: " all-tiles) 10 10 13)
-    ;; (print (.. "Orange tiles: " current.orange) 10 20 13)
+    (print (.. "Grey tiles: " current.grey) 10 20 13)
     ;; (print (.. "Red tiles: " current.red) 10 30 13)
     (draw-box! {:x 3 :y 3 :w red-portion :h 2 :bg-color palette.red})
     (draw-box! {:x (sum 3 red-portion) :y 3 :w orange-portion :h 2 :bg-color palette.orange})
@@ -840,6 +851,7 @@
     (draw-box! {:x (sum 3 red-portion orange-portion yellow-portion) :y 3 :w green-portion :h 2 :bg-color palette.green})
     (draw-box! {:x (sum 3 red-portion orange-portion yellow-portion green-portion) :y 3 :w blue-portion :h 2 :bg-color palette.blue})
     (draw-box! {:x (sum 3 red-portion orange-portion yellow-portion green-portion blue-portion) :y 3 :w purple-portion :h 2 :bg-color palette.purple})
+    (draw-box! {:x (sum 3 red-portion orange-portion yellow-portion green-portion blue-portion purple-portion) :y 3 :w grey-portion :h 2 :bg-color 14})
     (draw-box! {:x 2 :y 2 :w 236 :h 4 :border-color 12})
     ))
 
@@ -862,13 +874,19 @@
     (if player-ent
         :noop
         (do
+
           (for [x 0 239]
             (for [y 0 16]
               (let [tile (mget x y)]
-                (if (= 240 tile)
-                    (let [map-x (- (* x 8) 120)]
-                      (tset self.state :screen-x map-x)
-                      (self:add-entity! (merge player {:state {:invuln (if during-game 200 0) :x (* x 8) :y (* y 8) :color :orange}})))))))))))
+                (if
+                 (= 240 tile)
+                 (let [map-x (- (* x 8) 120)]
+                   (tset self.state :screen-x map-x)
+                   (self:add-entity! (merge player {:state {:invuln (if during-game 200 0) :x (* x 8) :y (* y 8) :color :orange}})))
+                 (> (* 100 (math.random)) 95)
+                 (let []
+                   (if during-game (self:paint-tile! {:color :grey :x (* x 8) :y (* y 8)}))
+                   )))))))))
 
 (defscreen $screen :game
   {:state {}
@@ -922,7 +940,9 @@
                            colorable? (between? tile 1 144)
                            tile-color (tile-color tile)
                            solid? (fget tile 0)
-                           would-paint? (and (not= tile-color :none) (not= color tile-color))]
+                           would-paint? (and
+                                         (not= tile-color :grey)
+                                         (not= tile-color :none) (not= color tile-color))]
                        {:x (* 8 tile-x)
                         :y (* 8 tile-y)
                         : tile-x : tile-y : solid? : tile : colorable? :color tile-color : would-paint?}))
@@ -932,7 +952,7 @@
                          : tile : colorable? } (self:fetch-map-tile input)
                         in-color (or (?. state.color-bar color) 0)
                         out-color (or (?. state.color-bar tile-color) 0)]
-                    (if would-paint?
+                    (if (or would-paint? (and colorable? (= color :grey)))
                         (do
                           (doto state.color-bar
                             (tset color (+ in-color 1))
@@ -941,7 +961,7 @@
    :recalculate-color-bar!
    (fn [{: state &as self}]
      (let [{: map-y} state
-           color-bar {}]
+           color-bar {:grey 0}]
        (for [x 0 239]
          (for [y 0 16]
            (let [t-color (tile-color (mget x y))
@@ -1047,12 +1067,20 @@
 ;; 137:8111111181221111811111118111112281111111811111118811111108888888
 ;; 138:1111111111111111111111112111111111111111111112211111111188888888
 ;; 139:1111111822211118111111181111111811122118111111181111118888888880
-;; 185:7666766676666776766666677666666676666666766666667666677676666667
-;; 186:6666666766666777766676676757666766776667666676676666676767666667
-;; 201:7666766676666776766666677666666676666666766666667666677676666667
-;; 202:6666666766666777766676676757666766776667666676676666676767666667
+;; 153:0fffffffffddeeeefeefeeeefeeefeeffeeeeffffeeeeeeffeeddefefeeeefee
+;; 154:ffffffffeeeeeeeeeeeeeeddfffffeeedeeeefffeeeffeeeeeefeeeeeeeeffff
+;; 155:fffffff0eeeeeeffeeeeeeefeeddeeefeffeeeefeeffeeefeefeeddfffeeeeef
+;; 168:000000000000dd00000eedd00000eed000eeee000feeeff00ffdeff0ddfdeff0
+;; 169:feeefeeefeeeffeefeeeeeeefeeeeeeefeeeedddfeeeeeeefeeeefeefeeffeff
+;; 170:feeeeeefefeeeddfeefffefeefeefefefeeeefeefeeeeefefeeeeeeffeeeeeef
+;; 171:feeeeeefefeeeeefeeffeeefdeeffeefeeeeeeefeeeeeeefeeeeeddfeeeeeeef
+;; 184:00cccc000c000000c00ccc00c0c000c0c0c0c0c0c00cc0c0c00000c00ccccc00
+;; 185:feeeeeeffeddeeeffeeeeeeefeeeeeddfeeeeeeefeeeeeeeffeeeeee0fffffff
+;; 186:eeeeeeeeeffeeefefeffefeedeeeffeeeeeeefeeeeeeefffeeeeeeeeffffffff
+;; 187:eeeeeeefdddeeeefeeefeeefeeffeeefefffdeeffeeffeefeeeeeefffffffff0
+;; 202:feeeeeefefeeeddfeefffefeefeefefefeeeefeefeeeeefefeeeeeeffeeeeeef
 ;; 217:7666766676666776766666677666666676666666766666667666677676666667
-;; 218:6666666766666777766676676757666766776667666676676666676767666667
+;; 218:feeeeeefefeeeddfeefffefeefeefefefeeeefeefeeeeefefeeeeeeffeeeeeef
 ;; 224:00cccccc0c000123c0000964c0000000c00000b0c00000bbc00000bbcbbb000b
 ;; 225:cccccc00100dddc0100000dc100000dcb0b0000cbbb0000cbbc0000cbb0c0bbc
 ;; 226:00cccccc0c000222c0000222c0000000c00000b0c00000bbc00000bbcbbb000b
@@ -1061,6 +1089,7 @@
 ;; 229:00cccccc0c000666c0000666c0000000c00000b0c00000bbc00000bbcbbb000b
 ;; 230:00cccccc0c000999c0000999c0000000c00000b0c00000bbc00000bbcbbb000b
 ;; 231:00cccccc0c000111c0000111c0000000c00000b0c00000bbc00000bbcbbb000b
+;; 234:feeeeeefefeeeddfeefffefeefeefefefeeeefeefeeeeefefeeeeeeffeeeeeef
 ;; 240:cbbb000bcbfbb00bcbfbbbbbcbfbbbbbcbbbbbb2cbbbbd33cb888d22cb888d22
 ;; 241:bb00cbbcbb00bfbcbbbbbfbcbbbbbfbc2bbbbbbc33dbbbbc22d888bc22d888bc
 ;; 242:0000000000000000002020000002000000202000000000000000000000000000
@@ -1239,7 +1268,7 @@
 ;; </TRACKS>
 
 ;; <FLAGS>
-;; 000:00101010000000000010101000000000001010100000000000101010000000000010101000000000001010100000000000101010000000000010101000000000001010100000000000101010000000000010101000000000001010100000000000101010000000000010101000000000001010100000000000101010000000000010101000000000001010100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+;; 000:00101010000000000010101000000000001010100000000000101010000000000010101000000000001010100000000000101010000000000010101000000000001010100000000000101010000000000010101000000000001010100000000000101010000000000010101000000000001010100000000000101010000000000010101000000000001010100000000000000000000000000010101000000000000000000000000000101010000000000000000000000000001010100000000000000000000000000000100000000000000000000000000000001000000000000000000000000000000010000000000000000000000000000000000000000000
 ;; </FLAGS>
 
 ;; <PALETTE>
