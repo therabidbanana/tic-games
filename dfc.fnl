@@ -581,7 +581,7 @@
         (- tile dist)
         tile)))
 
-(fn bullet-react [{: color &as bullet} {: x : y &as state} {: entities &as game}]
+(fn bullet-react [{: color &as bullet} {: x : y : screen-x : screen-y &as state} {: entities &as game}]
   (let [collision   (bullet:collision-box)
         intersected (-?>> (filterv #(= :enemy $.tag) entities)
                           (filterv #(touches? collision ($:collision-box)))
@@ -592,7 +592,7 @@
         {: would-paint?} (game:fetch-map-tile {: x : y : color})]
     (if intersected
         (do (intersected:take-damage! bullet) :die)
-        (not (touches? {:x -10 :y -10 :w 260 :h 200} collision))
+        (not (touches? {:x (+ -10 screen-x) :y (+ -10 screen-y) :w 260 :h 200} collision))
         :die
         would-paint?
         (do (game:paint-tile! {: x : y : color}) :die)
@@ -612,7 +612,8 @@
      :render (fn [{&as bullet} {: x : y : color : h : w : screen-x : screen-y} _e]
                (let [shifted-x (- x screen-x)
                      shifted-y (- y screen-y)]
-                 (rect x y w h (?. palette color))))}))
+                 (rect shifted-x shifted-y w h (?. palette color))))}))
+
 
 (var next-color {:red :orange :orange :yellow :yellow :green :green :blue :blue :purple :purple :red})
 (var prev-color {:red :purple :orange :red :yellow :orange :green :yellow :blue :green :purple :blue})
@@ -637,7 +638,7 @@
         y (+ y dy)
         dir (if (< dx -0.1) -1 (> dx 0.1) 1 (or dir 1))
         left? (= dir -1)
-        x (clamp x 0 224)
+        x (clamp x 0 (- (* 8 240) 8)) ;; Limit to edges
         y (clamp y -8 122)
         collision   (self:collision-box)
         intersected (-?>> (filterv #(= :enemy $.tag) entities)
@@ -660,16 +661,16 @@
         ;; Handle bouncing
         foot-tile (game:fetch-map-tile {:x (+ x 7) :y (+ y 14) : color})
         dy (if (and foot-tile.solid? foot-tile.would-paint?) (min dy 0) dy)
-        y  (if (and foot-tile.solid? foot-tile.would-paint?) (- foot-tile.sy 14) y)
+        y  (if (and foot-tile.solid? foot-tile.would-paint?) (- foot-tile.y 14) y)
         head-tile (game:fetch-map-tile {:x (+ x 7) :y (+ y 2) : color})
         dy (if (and head-tile.would-paint? head-tile.solid?) (max dy 0.15) dy)
-        y  (if (and head-tile.would-paint? head-tile.solid?) (+ head-tile.sy 6) y)
+        y  (if (and head-tile.would-paint? head-tile.solid?) (+ head-tile.y 6) y)
         right-tile (game:fetch-map-tile {:x (+ x 14) :y (+ y 6) : color})
         dx (if (and right-tile.would-paint? right-tile.solid?) (min dx 0) dx)
-        x  (if (and right-tile.would-paint? right-tile.solid?) (- right-tile.sx 14) x)
+        x  (if (and right-tile.would-paint? right-tile.solid?) (- right-tile.x 14) x)
         left-tile (game:fetch-map-tile {:x x :y (+ y 6) : color})
         dx (if (and left-tile.would-paint? left-tile.solid?) (max dx 0) dx)
-        x  (if (and left-tile.would-paint? left-tile.solid?) (+ left-tile.sx 8) x)
+        x  (if (and left-tile.would-paint? left-tile.solid?) (+ left-tile.x 8) x)
         ]
     (if bounced?
         (do
@@ -850,10 +851,9 @@
             (for [y 0 16]
               (let [tile (mget x y)]
                 (if (= 240 tile)
-                    (let [map-x (+ (- 0 (* x 8)) 120)]
-                      (tset self.state
-                            :screen-x map-x)
-                      (self:add-entity! (merge player {:state {:invuln (if during-game 200 0) :x 120 :y (* y 8) :color :orange}})))))))))))
+                    (let [map-x (- (* x 8) 120)]
+                      (tset self.state :screen-x map-x)
+                      (self:add-entity! (merge player {:state {:invuln (if during-game 200 0) :x (* x 8) :y (* y 8) :color :orange}})))))))))))
 
 (defscreen $screen :game
   {:state {}
@@ -908,11 +908,11 @@
                            tile-color (tile-color tile)
                            solid? (fget tile 0)
                            would-paint? (and (not= tile-color :none) (not= color tile-color))]
-                       {:sx (+ (* 8 tile-x) state.screen-x)
-                        :sy (- (* 8 tile-y) (or state.screen-y 0))
-                        :x tile-x :y tile-y : solid? : tile : colorable? :color tile-color : would-paint?}))
+                       {:x (* 8 tile-x)
+                        :y (* 8 tile-y)
+                        : tile-x : tile-y : solid? : tile : colorable? :color tile-color : would-paint?}))
    :paint-tile! (fn [{: state &as self} {: x :  y : color &as input}]
-                  (let [{:x tile-x :y tile-y
+                  (let [{: tile-x : tile-y
                          :color tile-color : would-paint?
                          : tile : colorable? } (self:fetch-map-tile input)
                         in-color (or (?. state.color-bar color) 0)
