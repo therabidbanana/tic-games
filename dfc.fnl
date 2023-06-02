@@ -674,7 +674,7 @@
         ]
     (if bounced?
         (do
-          (sfx 16 "E-5" 8 0 7)
+          (sfx 16 "E-5" 8 0 4)
           (intersected:take-damage! {: color : x : y})))
     (if damaged?
         (do
@@ -682,7 +682,9 @@
         )
     (if (btnp 4)
         ;; TODO: Is there a less sneaky way to add entity?
-        (^in entities (build-bullet {:x (+ x (if left? 0 15)) :y (+ y 10) : color :speed (if left? -2 2)})))
+        (do 
+          (sfx 18 "D-6" 8 0 4)
+          (^in entities (build-bullet {:x (+ x (if left? 0 15)) :y (+ y 10) : color :speed (if left? -2 2)}))))
     (if (<= hp 0)
         :die
         (merge state {: x : y : dx : dy : color : dir :invuln new-invuln : hp}))))
@@ -1215,6 +1217,7 @@
 ;; 003:0000007000800080009000a000a000a000a000a00090008000500030004000400050009000b000c000d000d000d00080006000500040003000300000385000000000
 ;; 016:62003270828d323b22e262ee02e802d7223852445252028012d412e402f4023f0260424b024d021e224e02da522d028c024b0230529002e602e532f7484000000000
 ;; 017:63003370838d333b23e263ee03e803d7233853445352038013d413e403f4033f0360434b034d031e234e03da532d038c034b0330539003e603e533f7689000000000
+;; 018:919391b79197918691839172915f919d919a910001000100010001000100010001000100010001000100010001000100010001000100010001000100502000000000
 ;; </SFX>
 
 ;; <PATTERNS>
