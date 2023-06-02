@@ -601,7 +601,7 @@
 (var palette {:red 2 :orange 3 :yellow 4 :green 6 :blue 9 :purple 1})
 
 (fn build-bullet [{: x : y : color : speed &as state}]
-  (let [speed (or speed 2)
+  (let [speed (or speed 2.5)
         dx    speed
         dy    0
         color (or color :red)]
@@ -674,7 +674,12 @@
         ]
     (if bounced?
         (do
+          (sfx 16 "E-5" 8 0 7)
           (intersected:take-damage! {: color : x : y})))
+    (if damaged?
+        (do
+          (sfx 17 "G#7" 16 1 7))
+        )
     (if (btnp 4)
         ;; TODO: Is there a less sneaky way to add entity?
         (^in entities (build-bullet {:x (+ x (if left? 0 15)) :y (+ y 10) : color :speed (if left? -2 2)})))
@@ -794,15 +799,21 @@
           (merge state {: x : y : dx : dy : cycle})))))
 
 (var enemy-portal-colors {:red 32 :orange 40 :yellow 80 :green 88 :blue 128 :purple 136})
-(fn build-portal [{: color &as base-state}]
+(fn build-portal [{: color : hp &as base-state}]
   (let [color (or color :red)
+        hp    (or hp 10)
         sprite (?. enemy-portal-colors color)]
-    {:render draw-entity
+    {:render (fn [self {: x : y : screen-x : screen-y : hp : max-hp &as state} {&as game}]
+               (let [x (- x screen-x)
+                     y (- y screen-y)]
+                 (draw-box! {:x (+ x 2) :y (- y 4) :w 12 :h 3 :border-color (?. palette color)})
+                 (draw-box! {:x (+ x 3) :y (- y 3) :w (* (/ hp max-hp) 10) :h 1 :bg-color (?. palette color)})
+                 (draw-entity self state game)))
      :react portal-react
      :tag :enemy
      :color color
      :collision-box (fn [{: state}] {:x state.x :y state.y :w 16 :h 16})
-     :state (merge {: color} (or base-state {}))
+     :state (merge {: color :max-hp hp : hp} (or base-state {}))
      :take-damage! (fn [self bullet]
                      (tset self.state :hp (- (or self.state.hp 1) 1)))
      :character
@@ -889,7 +900,7 @@
                                   (do (self:add-entity!
                                        (build-portal {
                                                       :color (?. color-cycle (- tile 241))
-                                                      :dx -0.5 :x (* x 8) :y (* y 8) :hp 1}))
+                                                      :dx -0.5 :x (* x 8) :y (* y 8) :hp 10}))
                                       (mset x y 0)
                                       0)
                                   tile)
@@ -1201,6 +1212,9 @@
 ;; 000:620062006200620062006200620062006200620062006200620062006200620062006200620062006200620062006200620062006200620062006200300000000000
 ;; 001:020002000200020002000200020002000200020002000200020002000200020002000200020002000200020002000200020002000200020002000200304000000000
 ;; 002:030003000300030003000300030003000300030003000300030003000300030003000300030003000300030003000300030003000300030003000300200000000000
+;; 003:0000007000800080009000a000a000a000a000a00090008000500030004000400050009000b000c000d000d000d00080006000500040003000300000385000000000
+;; 016:62003270828d323b22e262ee02e802d7223852445252028012d412e402f4023f0260424b024d021e224e02da522d028c024b0230529002e602e532f7484000000000
+;; 017:63003370838d333b23e263ee03e803d7233853445352038013d413e403f4033f0360434b034d031e234e03da532d038c034b0330539003e603e533f7689000000000
 ;; </SFX>
 
 ;; <PATTERNS>
