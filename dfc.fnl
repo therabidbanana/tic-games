@@ -809,7 +809,7 @@
                                               :hp 1})))
           (merge state {: x : y : dx : dy : cycle})))))
 
-(var enemy-portal-colors {:red 32 :orange 40 :yellow 80 :green 88 :blue 128 :purple 136})
+(var enemy-portal-colors {:red 32 :orange 40 :yellow 80 :green 88 :blue 128 :purple 136 :white 176})
 (fn build-portal [{: color : hp &as base-state}]
   (let [color (or color :red)
         hp    (or hp 10)
@@ -828,6 +828,28 @@
      :state (merge {: color :max-hp hp : hp} (or base-state {}))
      :take-damage! (fn [self bullet]
                      (tset self.state :hp (- (or self.state.hp 1) 1)))
+     :character
+     {:sprite sprite :trans 0 :w 1 :h 1 :scale 2}}))
+
+(fn build-home-portal [{: color : hp &as base-state}]
+  (let [color (or color :white)
+        sprite (?. enemy-portal-colors color)]
+    {:render draw-entity
+     :react (fn [{: color &as self}
+                 {: hp : cycle : x : y : dx : dy :  ticks &as state}
+                 {: entities &as game}]
+              (let [dy (* 0.15 (math.sin (/ ticks 40)))
+                    player-ent (->> (filterv #(= :player $.tag) entities) first)]
+                (if (touches? (self:collision-box) (player-ent:collision-box))
+                    ($screen:select! :title)
+                    :else
+                    (merge state {:y (+ y dy) :dy dy}))))
+     :tag :home
+     :portal true
+     :color :white
+     :collision-box (fn [{: state}] {:x state.x :y state.y :w 16 :h 16})
+     :state (merge {: color :max-hp hp : hp} (or base-state {}))
+     :take-damage! (fn [self bullet] :noop)
      :character
      {:sprite sprite :trans 0 :w 1 :h 1 :scale 2}}))
 
@@ -874,7 +896,7 @@
     (if player-ent
         :noop
         (do
-
+          ;; TODO - fix for other color maps
           (for [x 0 239]
             (for [y 0 16]
               (let [tile (mget x y)]
@@ -888,6 +910,23 @@
                    (if during-game (self:paint-tile! {:color :grey :x (* x 8) :y (* y 8)}))
                    )))))))))
 
+(fn spawn-home-portal! [{: entities &as self} during-game]
+  (let [home-ent    (->> (filterv #(= :home $.tag) self.entities) first)
+        ;; TMP: testing home
+        enemy-count (- (->> (filterv #(= :enemy $.tag) self.entities) count) 100)]
+    (if (or home-ent (> enemy-count 0))
+        :noop
+        (do
+          ;; TODO - fix for other color maps
+          (for [x 0 239]
+            (for [y 0 16]
+              (let [tile (mget x y)]
+                (if
+                 (= 240 tile)
+                 (let [shifted-y (- y 6)]
+                   (self:add-entity! (build-home-portal {:x (* x 8) :y (* shifted-y 8)})))
+                 ))))))))
+
 (defscreen $screen :game
   {:state {}
    :tick
@@ -895,6 +934,7 @@
      ;; (if (btnp 7) ($screen:select! :pause))
      (react-entities! self screen-state)
      (spawn-players! self true)
+     (spawn-home-portal! self true)
      ;; (draw-sky! screen-state)
      (let [player-ent (->> (filterv #(= :player $.tag) self.entities) first)
            player-offset (- player-ent.state.x screen-x)
@@ -1074,7 +1114,7 @@
 ;; 169:feeefeeefeeeffeefeeeeeeefeeeeeeefeeeedddfeeeeeeefeeeefeefeeffeff
 ;; 170:feeeeeefefeeeddfeefffefeefeefefefeeeefeefeeeeefefeeeeeeffeeeeeef
 ;; 171:feeeeeefefeeeeefeeffeeefdeeffeefeeeeeeefeeeeeeefeeeeeddfeeeeeeef
-;; 184:00cccc000c000000c00ccc00c0c000c0c0c0c0c0c00cc0c0c00000c00ccccc00
+;; 176:00cccc000c000000c00ccc00c0c000c0c0c0c0c0c00cc0c0c00000c00ccccc00
 ;; 185:feeeeeeffeddeeeffeeeeeeefeeeeeddfeeeeeeefeeeeeeeffeeeeee0fffffff
 ;; 186:eeeeeeeeeffeeefefeffefeedeeeffeeeeeeefeeeeeeefffeeeeeeeeffffffff
 ;; 187:eeeeeeefdddeeeefeeefeeefeeffeeefefffdeeffeeffeefeeeeeefffffffff0
