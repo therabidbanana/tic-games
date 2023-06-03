@@ -726,15 +726,6 @@
        ($ui:textbox! (merge dialog :action after-action))
        ($ui:textbox! (merge dialog :action #(dialog-chain after-action (table.unpack next-dialogs)))))))
 
-(var map-details
-     {
-      :map {:x 210 :y 17 :trans 0}
-      :sprites [{:h 1 :w 1 :sprite enemy-portal-colors.orange :trans 0 :x 80 :y 40 :action #($screen:select! :game)}
-                {:h 1 :w 1 :sprite enemy-portal-colors.green :trans 0 :x 200 :y 72 :action #($screen:select! :game)}
-                {:h 1 :w 1 :sprite enemy-portal-colors.red :trans 0 :x 32 :y 16 :action #($screen:select! :game)}
-                {:h 1 :w 1 :sprite enemy-portal-colors.yellow :trans 0 :x 160 :y 16 :action #($screen:select! :game)}
-                {:h 1 :w 1 :sprite enemy-portal-colors.purple :trans 0 :x 24 :y 72 :action #($screen:select! :game)}
-                {:h 1 :w 1 :sprite enemy-portal-colors.blue :trans 0 :x 104 :y 112 :action #($screen:select! :game)}]})
 
 (defscreen $screen :intro
   {:tick
@@ -757,6 +748,34 @@
                     :text "I'll see what I can do with my Rainbow Witch powers!"
                     })
      )})
+
+(var map-details
+     {
+      :map {:x 210 :y 17 :trans 0}
+      :sprites [{:h 1 :w 1 :sprite enemy-portal-colors.orange :trans 0 :x 80 :y 40
+                 :action #(do
+                            (set $screen.screens.game.level :orange)
+                            ($screen:select! :game))}
+                {:h 1 :w 1 :sprite enemy-portal-colors.green :trans 0 :x 200 :y 72
+                 :action #(do
+                            (set $screen.screens.game.level :green)
+                            ($screen:select! :game))}
+                {:h 1 :w 1 :sprite enemy-portal-colors.red :trans 0 :x 32 :y 16
+                 :action #(do
+                            (set $screen.screens.game.level :red)
+                            ($screen:select! :game))}
+                {:h 1 :w 1 :sprite enemy-portal-colors.yellow :trans 0 :x 160 :y 16
+                 :action #(do
+                            (set $screen.screens.game.level :yellow)
+                            ($screen:select! :game))}
+                {:h 1 :w 1 :sprite enemy-portal-colors.purple :trans 0 :x 24 :y 72
+                 :action #(do
+                            (set $screen.screens.game.level :purple)
+                            ($screen:select! :game))}
+                {:h 1 :w 1 :sprite enemy-portal-colors.blue :trans 0 :x 104 :y 112
+                 :action #(do
+                            (set $screen.screens.game.level :blue)
+                            ($screen:select! :game))}]})
 
 (defscreen $screen :map
   {:tick
@@ -973,7 +992,7 @@
   (print (.. "HP:" (or first-player.state.hp 3)) 10 120 13)
   )
 
-(fn spawn-players! [{: entities &as self} during-game]
+(fn spawn-players! [{: level : entities &as self} during-game]
   (let [player-ent (->> (filterv #(= :player $.tag) self.entities) first)]
     (if player-ent
         :noop
@@ -988,7 +1007,7 @@
                  (= 240 tile)
                  (let [map-x (- (* x 8) 120)]
                    (tset self.state :screen-x map-x)
-                   (self:add-entity! (merge player {:state {:invuln (if during-game 200 0) :x (* x 8) :y (* y 8) :color :orange}})))
+                   (self:add-entity! (merge player {:state {:invuln (if during-game 200 0) :x (* x 8) :y (* y 8) :color level}})))
                  (> (* 100 (math.random)) 95)
                  (let []
                    (if during-game (self:paint-tile! {:color :grey :x (* x 8) :y (* y 8)}))
