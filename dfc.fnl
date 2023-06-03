@@ -530,8 +530,6 @@
 ;; -------
 
 (var t 0)
-(var player-x 96)
-(var player-y 24)
 (var player-sprite 256)
 (var enemy-portal-colors {:red 32 :orange 40 :yellow 80 :green 88 :blue 128 :purple 136 :white 176})
 
@@ -816,36 +814,45 @@
      (poke 0x03FF8 8)
      ($ui:clear-all!)
      ($ui:menu! {:box {:x 50 :w 140}
-                 :options [{:label "Play Game" :action #($screen:select! :intro)}
-
+                 :options [{:label "Play Game" :action #(do (set $screen.screens.game.two_mode false)
+                                                            (set $screen.screens.intro.two_mode false)
+                                                            (set $screen.screens.map.two_mode false)
+                                                            ($screen:select! :intro))}
+                           {:label "Play Game (2p)" :action #(do (set $screen.screens.game.two_mode true)
+                                                                 (set $screen.screens.intro.two_mode true)
+                                                                 (set $screen.screens.map.two_mode true)
+                                                                 ($screen:select! :intro))}
                            {:label "UI Test" :keep-open? true :action #(ui-testbed)}]}))})
 
 (var sprite-colors {:red 256 :orange 264 :blue 320 :green 296 :purple 328 :yellow 288})
 (var color-cycle [:red :orange :yellow :green :blue :purple])
 
-(var player
-     {:render (fn draw-player [{: character &as ent} {: dir : color : invuln &as state} _others]
-                (let [sprite (if (> (% (or invuln 0) 33) 29)
-                                 (?. sprite-colors (?. next-color color))
-                                 (and (< (% (or invuln 0) 33) 9) (not= 0 invuln))
-                                 (?. sprite-colors (?. prev-color color))
-                                 (?. sprite-colors color))
-                      flip (if (> (or dir 1) 0) 0 1)
-                      shifted-x (- state.x state.screen-x)
-                      shifted-y (- state.y state.screen-y)
-                      ]
-                  (draw-sprite! (merge (merge character state)
-                                       {:x shifted-x :y shifted-y : sprite : flip}))))
-      :react player-react
-      :collision-box (fn [{: state}] {:x (+ state.x 5) :y (+ state.y 4) :w 10 :h 10})
-      :state {:x player-x :y player-y :color :yellow}
-      :tag :player
-      :character
-      {;; Test weird blink patterns
-       :animate {:period 200 :steps [{:t 0 :index 1} {:t 100 :index 2} {:t 112 :index 1}
-                                     {:t 115 :index 3} {:t 130 :index 1}]}
-       :trans 0
-       :x player-x :y player-y :w 2 :h 2}})
+(fn build-player [base-state first-player]
+  {:render (fn draw-player [{: character &as ent} {: dir : color : invuln &as state} _others]
+             (let [sprite (if (> (% (or invuln 0) 33) 29)
+                              (?. sprite-colors (?. next-color color))
+                              (and (< (% (or invuln 0) 33) 9) (not= 0 invuln))
+                              (?. sprite-colors (?. prev-color color))
+                              (?. sprite-colors color))
+                   flip (if (> (or dir 1) 0) 0 1)
+                   shifted-x (- state.x state.screen-x)
+                   shifted-y (- state.y state.screen-y)
+                   ]
+               (draw-sprite! (merge (merge character state)
+                                    {:x shifted-x :y shifted-y : sprite : flip}))))
+   :react player-react
+   :collision-box (fn [{: state}] {:x (+ state.x 5) :y (+ state.y 4) :w 10 :h 10})
+   :state (merge {:x 0 :y 0 :color :yellow}
+                 base-state)
+   :tag :player
+   :firstp  first-player
+   :secondp  (not first-player)
+   :character
+   {;; Test weird blink patterns
+    :animate {:period 200 :steps [{:t 0 :index 1} {:t 100 :index 2} {:t 112 :index 1}
+                                  {:t 115 :index 3} {:t 130 :index 1}]}
+    :trans 0
+    :w 2 :h 2}})
 
 (fn enemy-react [{: color &as self}
                  {: hp : x : y : dx : dy : ticks &as state}
@@ -884,6 +891,13 @@
      :character
      {:sprite sprite :trans 0 :w 2 :h 2}}))
 
+(fn player-nearby? [{: x : y &as state} entities]
+  (let [nearby-players
+        (-?>> (filterv #(= :player $.tag) entities)
+              (filterv #(< (math.abs (- $.state.x x)) 240))
+              count)]
+    (> nearby-players 0)))
+
 (fn portal-react [{: color &as self}
                   {: hp : cycle : x : y : dx : dy :  ticks &as state}
                   {: entities : bounds &as game}]
@@ -898,13 +912,12 @@
         dy (math.sin (/ ticks 40))
         cycle (or cycle (+ 197 (// (* (math.random) 90) 1)))
         {: would-paint? } (game:fetch-map-tile {:x (+ x 7) :y (+ y 7) : color})
-        player (->> (filterv #(= :player $.tag) entities)
-                    first)]
+        player-is-nearby? (player-nearby? state entities)]
     (if (<= hp 0)
         :die
         (do
           (if would-paint? (game:paint-tile! {:x (+ x 7) :y (+ y 7) : color}))
-          (if (and (= (% ticks cycle) 0) (< (math.abs (- player.state.x x)) 240))
+          (if (and (= (% ticks cycle) 0) player-is-nearby?)
               (game:add-entity! (build-enemy {:color color
                                               :dx (* -1 (math.random))
                                               :x (+ x (- 10 (* 10 (math.random))))
@@ -944,7 +957,9 @@
                  {: hp : timer-ticks : cycle : x : y : dx : dy :  ticks &as state}
                  {: entities &as game}]
               (let [dy (* 0.15 (math.sin (/ ticks 40)))
-                    player-ent (->> (filterv #(= :player $.tag) entities) first)]
+                    player-ent (->> (filterv #(= :player $.tag) entities)
+                                    (filterv #(= $.firstp true))
+                                    first)]
                 (if (touches? (self:collision-box) (player-ent:collision-box))
                     ;; ($ui:textbox! {:box {:x 34}
                     ;;                :character portraits.princess
@@ -1008,9 +1023,9 @@
   ;; (print (.. "y:" (or first-player.state.y 0)) 10 100 13)
   )
 
-(fn spawn-players! [{: level : entities : bounds &as self} during-game]
-  (let [player-ent (->> (filterv #(= :player $.tag) self.entities) first)]
-    (if player-ent
+(fn spawn-players! [{: level : entities : bounds : two_mode &as self} during-game]
+  (let [first-player (->> (filterv #(= $.firstp true) self.entities) first)]
+    (if first-player
         :noop
         (do
           (if during-game
@@ -1023,7 +1038,7 @@
                  (= 240 tile)
                  (let [centered-x (- (* x 8) 120)]
                    (tset self.state :screen-x centered-x)
-                   (self:add-entity! (merge player {:state {:invuln (if during-game 200 0) :x (* x 8) :y (* y 8) :color level}})))
+                   (self:add-entity! (build-player {:invuln (if during-game 200 0) :x (* x 8) :y (* y 8) :color level} true)))
                  (> (* 100 (math.random)) 95)
                  (let []
                    (if during-game (self:paint-tile! {:color :grey :x (* x 8) :y (* y 8)}))
@@ -1070,7 +1085,7 @@
      (spawn-players! self true)
      (spawn-home-portal! self true)
      ;; (draw-sky! screen-state)
-     (let [player-ent (->> (filterv #(= :player $.tag) self.entities) first)
+     (let [player-ent (->> (filterv #(= $.firstp true) self.entities) first)
            player-offset-x (- player-ent.state.x screen-x)
            diffx (- (clamp player-offset-x 80 160) player-offset-x)
            shifted-x (- screen-state.screen-x diffx)
@@ -1472,11 +1487,11 @@
 ;; </WAVES>
 
 ;; <SFX>
-;; 000:621062106221623362746273626f62dd62db62cb628c625e624f62406260620062006200620062006200620062006200620062006200620062006200300000000f0f
+;; 000:621062106221623362746273626f62dd62db62cb628c625e624f62406260620062006200620062006200620062006200620062006200620062006200405000000f0f
 ;; 001:02360236023602350281028d028b028a024a024a024b024e024202000200020002000200020002000200020002000200020002000200020002000200b04000000000
-;; 002:827482748284828382838283827282718240822d822d822d823d820d8200820082008200820082008200820082008200820082008200820082008200a00000000000
-;; 003:030603160326033603460366037a0382039303a403a403b403500330034003400350039003b003c003d003d003d00300030003000300030003000300b05000000d0d
-;; 004:834a834a830a830a830a8307830783478347834783078307830a830a830a830a830a830a830a830783078307830783078307830a830a830a830a830a404000000a0a
+;; 002:827482748284828382838283827282718240822d822d822d823d823d823d823d82008200820082008200820082008200820082008200820082008200c00000000000
+;; 003:030603160326033603460366037a0382039303a403a403b403500330034003400350039003b003c003d003d003d00300030003000300030003000300c00000000d0d
+;; 004:834a834a830a830a830a8307830783478347834783078307830a830a830a830a830a830a830a830783078307830783078307830a830a830a830a830a580000000a0a
 ;; 005:854a854a854a850a850a850a850785078547854785478507850a850a850a850a850a850a850a850785078507850785078507850a850a850a850a850a480000000c0c
 ;; 016:62003270828d323b22e262ee02e802d7223852445252028012d412e402f4023f0260424b024d021e224e02da522d028c024b0230529002e602e532f7484000000000
 ;; 017:63003370838d333b23e263ee03e803d7233853445352038013d413e403f4033f0360434b034d031e234e03da532d038c034b0330539003e603e533f7689000000000
@@ -1484,15 +1499,15 @@
 ;; </SFX>
 
 ;; <PATTERNS>
-;; 000:6551240000201000000000a06000240000001000200000a06000240000001000000000a06000240000204000240000001000200000210000000000006000240000211000200000006000240000001000200000206000240000201000200000008000240000206000240000201000200000a00000000000006000240000001000200000006000240000a01000200000a06000240000001000200000216000240000a04000240000a01000200000a00000200000a0100020000020100020000000
-;; 001:000000000021000000000000a00018000021100010000021000000000010000010000010800018000010100010000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+;; 000:6441240000201000000000a06000240000001000200000a06000240000001000000000a0600024100020400024000000600024000021100020000000600024000021100020000000600024000000100020000020600024000020b000240000008000240000201000200000206000240000a01000200000006000240000001000200000006000240000a04000240000a06000240000001000200000216000240000a01000200000a06000240000a01000200000a0600024000020400024000000
+;; 001:000000000021000000000000900048000021100010000021000000000010000010000010800018000010100010000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 ;; 002:500016000000a00016000000700016000010800016100010b00016000000900016000010800016100010900016100010000000000000000000000000000000000000800099000000000000b00029000000900029000000000021d00099000021000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 ;; 003:b00006e00006000000700006000000700006d00006000000f00006700006800006600006500006900006000000700006000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 ;; 004:000000f0000af00008f00004a0000cf00008d00004c0000ab0000cf0000660000cb0000040000460000eb00006d0000a000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 ;; </PATTERNS>
 
 ;; <TRACKS>
-;; 000:100000100000100000100000100000100000100000100000100000100000000400000500000000000000000000000000a00000
+;; 000:100000100000100000100000100000100200100200100000100000100000000400000500000000000000000000000000a00000
 ;; 001:300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200
 ;; </TRACKS>
 
