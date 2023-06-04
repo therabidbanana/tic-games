@@ -1173,7 +1173,21 @@
            diffy (- (clamp player-offset-y 34 94) player-offset-y)
            shifted-y (- screen-state.screen-y diffy)
            new-screen-y (clamp shifted-y (* 8 bounds.y) (* 8 (+ bounds.y bounds.h -17)))
-           ]
+           second-player (->> (filterv #(= $.secondp true) self.entities) first)]
+       ;; second player dragging along logic
+       (if (and second-player (or (< second-player.state.x (- new-screen-x 8))
+                                  (> second-player.state.x (+ new-screen-x 220))))
+           (tset second-player.state :x
+                 (clamp (- second-player.state.x diffx)
+                        (* 8 bounds.x)
+                        (* 8 (+ bounds.x bounds.w)))
+                 ))
+       (if (and second-player (or (< second-player.state.y (- new-screen-y 8))
+                                  (> second-player.state.y (+ new-screen-y 128))))
+           (tset second-player.state :y
+                 (clamp (- second-player.state.y diffy)
+                        (* 8 bounds.y)
+                        (* 8 (+ bounds.y bounds.h)))))
        (if (= (% ticks 60) 0)
            (self:recalculate-color-bar!))
        (if (empty? self.entities)
