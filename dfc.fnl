@@ -629,7 +629,7 @@
 (fn player-collides? [tile]
   (and tile.solid? (or tile.would-paint? (= tile.color :grey))))
 
-(fn player-react [self
+(fn player-react [{: firstp : secondp &as self}
                   {: x : y : dx : dy : color : dir : hp : invuln &as state}
                   {: entities : bounds &as game}]
   (let [max-speed 1.5
@@ -638,13 +638,13 @@
         gravity 0.05
         dx (or dx 0)
         dy (or dy 0)
-        dx (if (btn 2) (max (- dx add-speed) (* -1 max-speed))
-               (btn 3) (min (+ dx add-speed) max-speed)
+        dx (if (btn (if firstp 2 secondp 10)) (max (- dx add-speed) (* -1 max-speed))
+               (btn (if firstp 3 secondp 11)) (min (+ dx add-speed) max-speed)
                (< dx 0) (min (+ dx drag) 0)
                (max (- dx drag) 0)
                )
-        dy (if (btn 0) (min -1 dy)
-               (btn 1) (min (+ dy add-speed) max-speed)
+        dy (if (btn (if firstp 0 secondp 8)) (min -1 dy)
+               (btn (if firstp 1 secondp 9)) (min (+ dy add-speed) max-speed)
                (< dy -2) (+ dy (* 4 gravity))
                (< dy 0.15) (+ dy gravity)
                (min (+ dy gravity) 0.15))
@@ -665,12 +665,12 @@
         bounced? (and intersected collisions.top)
         hp (or hp 3)
         hp (if damaged? (- hp 1) hp)
-        color (if (btnp 6) (?. prev-color color)
-                  (btnp 5) (?. next-color color)
+        color (if (btnp (if firstp 6 secondp 14)) (?. prev-color color)
+                  (btnp (if firstp 5 secondp 13)) (?. next-color color)
                   damaged? intersected.color
                   color)
         new-invuln (if damaged? 200 (max (- (or invuln 1) 1) 0))
-        dy (if (and bounced? (btn 1)) -4 bounced? -2.5 dy)
+        dy (if (and bounced? (btn (if firstp 1 secondp 9))) -4 bounced? -2.5 dy)
         y (if bounced? (+ y dy) y)
         ;; Handle bouncing
         foot-tile (game:fetch-map-tile {:x (+ x 7) :y (+ y 14) : color})
@@ -694,7 +694,7 @@
         (do
           (sfx 17 "G#7" 16 1 7))
         )
-    (if (btnp 4)
+    (if (btnp (if firstp 4 secondp 12))
         ;; TODO: Is there a less sneaky way to add entity?
         (do 
           (sfx 18 "D-6" 8 0 4)
@@ -811,6 +811,7 @@
      (print "Critters" 69 53 13 false 2))
    :prepare
    (fn []
+     (sync)
      (poke 0x03FF8 8)
      ($ui:clear-all!)
      ($ui:menu! {:box {:x 50 :w 140}
@@ -1023,6 +1024,13 @@
   ;; (print (.. "y:" (or first-player.state.y 0)) 10 100 13)
   )
 
+(fn mark-grey-tiles [{: level : entities : bounds : two_mode &as self} percentage]
+  (for [x bounds.x (- (+ bounds.x bounds.w) 1)]
+    (for [y bounds.y (- (+ bounds.y bounds.h) 1)]
+      (let [tile (mget x y)]
+        (if (> (* 100 (math.random)) (- 100 percentage))
+            (self:paint-tile! {:color :grey :x (* x 8) :y (* y 8)}))))))
+
 (fn spawn-players! [{: level : entities : bounds : two_mode &as self} during-game]
   (let [first-player (->> (filterv #(= $.firstp true) self.entities) first)]
     (if first-player
@@ -1030,7 +1038,6 @@
         (do
           (if during-game
               ($ui:textbox! {:box {:x 34} :text "Ouch!" :character portraits.princess}))
-          ;; TODO - fix for other color maps
           (for [x bounds.x (- (+ bounds.x bounds.w) 1)]
             (for [y bounds.y (- (+ bounds.y bounds.h) 1)]
               (let [tile (mget x y)]
@@ -1042,7 +1049,18 @@
                  (> (* 100 (math.random)) 95)
                  (let []
                    (if during-game (self:paint-tile! {:color :grey :x (* x 8) :y (* y 8)}))
-                   )))))))))
+                   ))))))))
+  (let [first-player (->> (filterv #(= $.firstp true) self.entities) first)
+        second-player (->> (filterv #(= $.secondp true) self.entities) first)]
+    (if (or second-player (not two_mode))
+        :noop
+        (do
+          (if during-game
+              ($ui:textbox! {:box {:x 34} :text "oof!" :character portraits.princess}))
+          (let [x (+ first-player.state.x 8)
+                y (+ first-player.state.y 8)]
+            (self:add-entity! (build-player {:invuln (if during-game 200 0) :x x :y y :color level} false)))
+          (if during-game (mark-grey-tiles self 5))))))
 
 (fn spawn-home-portal! [{: entities : bounds &as self} during-game]
   (let [home-ent    (->> (filterv #(= :home $.tag) self.entities) first)
@@ -1123,6 +1141,10 @@
                                                       :dx -0.5 :x (* x 8) :y (* y 8) :hp 10}))
                                       (mset x y 0)
                                       0)
+                                  (= tile 240)
+                                  (do (set self.state.home-x (* x 8))
+                                      (set self.state.home-y (* y 8))
+                                      tile)
                                   tile)
                               )
                    })
@@ -1183,10 +1205,10 @@
      )})
 
 (fn _G.BDR [line]
-  (let [scans 144
+  (let [scans 288
         PALETTE_ADDR 0x03FC0
         CHANGE_COL 8
-        color (* (// (* 0xff (/ line scans)) 32) 32)]
+        color (* (// (* 0xff (/ line scans)) 8) 8)]
     (poke (+ (* CHANGE_COL 3) PALETTE_ADDR) color)))
 
 (fn _G.BOOT []
