@@ -533,21 +533,6 @@
 (var player-sprite 256)
 (var enemy-portal-colors {:red 32 :orange 40 :yellow 80 :green 88 :blue 128 :purple 136 :white 176})
 
-(fn ui-testbed []
-  (var map-details
-       {:map {}
-        :sprites [{:h 2 :w 2 :sprite 34 :trans 14 :x 34 :y 100 :action #(set player-sprite 34)}
-                  {:h 2 :w 2 :sprite 36 :trans 14 :x 134 :y 20 :action #(set player-sprite 36)}
-                  {:h 2 :w 2 :sprite 66 :trans 14 :x 160 :y 120 :action #(set player-sprite 66)}
-                  {:h 2 :w 2 :sprite 1 :trans 14 :x 12 :y 62 :action #(set player-sprite 1)}]})
-  ($ui:menu! {:box {:x 140}
-              :tag :test
-              :options [{:label "Say Foobar?" :keep-open? true :action #($ui:textbox! {:box {:x 140} :text "Foobar!"})}
-                        {:label "Open Map" :action #(do ($ui:clear-all! :test) ($ui:sprite-selector! map-details))}
-                        {:label "Clear UI" :action #($ui:clear-all! :test)}
-                        {:label "Cancel"}]})
-  )
-
 (fn draw-entity [{ : character &as ent} state {: bounds &as game}]
   (let [shifted-x (- state.x (or state.screen-x 0))
         shifted-y (- state.y (or state.screen-y 0))]
@@ -822,8 +807,7 @@
                            {:label "Play Game (2p)" :action #(do (set $screen.screens.game.two_mode true)
                                                                  (set $screen.screens.intro.two_mode true)
                                                                  (set $screen.screens.map.two_mode true)
-                                                                 ($screen:select! :intro))}
-                           {:label "UI Test" :keep-open? true :action #(ui-testbed)}]}))})
+                                                                 ($screen:select! :intro))}]}))})
 
 (var sprite-colors {:red 256 :orange 264 :blue 320 :green 296 :purple 328 :yellow 288})
 (var color-cycle [:red :orange :yellow :green :blue :purple])
@@ -1160,12 +1144,16 @@
                            colorable? (between? tile 1 144)
                            tile-color (tile-color tile)
                            solid? (fget tile 0)
+                           oob? (or (< tile-x bounds.x) (> tile-x (+ bounds.x bounds.w))
+                                    (< tile-y bounds.y) (> tile-y (+ bounds.y bounds.h)))
                            would-paint? (and
                                          (not= tile-color :grey)
-                                         (not= tile-color :none) (not= color tile-color))]
+                                         (not= tile-color :none)
+                                         (not= color tile-color)
+                                         (not oob?))]
                        {:x (* 8 (- tile-x 0))
                         :y (* 8 (- tile-y 0))
-                        : tile-x : tile-y : solid? : tile : colorable? :color tile-color : would-paint?}))
+                        : tile-x : tile-y : oob? : solid? : tile : colorable? :color tile-color : would-paint?}))
    :paint-tile! (fn [{: state &as self} {: x :  y : color &as input}]
                   (let [{: tile-x : tile-y
                          :color tile-color : would-paint?
