@@ -1089,6 +1089,7 @@
                  (= 240 tile)
                  (let [centered-x (- (* x 8) 120)]
                    (tset self.state :screen-x centered-x)
+                   (tset self.state :screen-y (* bounds.y 8))
                    (self:add-entity! (build-player {:invuln (if during-game 200 0) :x (* x 8) :y (* y 8) :color level} true)))
                  (> (* 100 (math.random)) 95)
                  (let []
@@ -1123,7 +1124,22 @@
                    (self:add-entity! (build-home-portal {:x (* x 8) :y (* shifted-y 8)})))
                  ))))))))
 
-(var level-bounds
+(var test-level-bounds
+     {:yellow {:x 0 :y 0
+               :w (* 30 5) :h 17}
+      :red {:x 0 :y 0
+            :w (* 30 5) :h 17}
+      :orange {:x 0 :y 0
+               :w (* 30 5) :h 17}
+      :blue {:x 0 :y 17
+             :w (* 30 3) :h 20}
+      :purple {:x 0 :y 17
+               :w (* 30 3) :h 17}
+      :green {:x 0 :y 17
+              :w (* 30 3) :h 17}
+      })
+
+(var real-level-bounds
      {:yellow {:x 0 :y 0
                :w (* 30 5) :h 17}
       :red {:x 0 :y 0
@@ -1137,6 +1153,7 @@
       :green {:x 0 :y 17
               :w (* 30 3) :h 17}
       })
+
 
 (defscreen $screen :game
   {:state {}
@@ -1155,7 +1172,7 @@
            player-offset-y (- player-ent.state.y screen-y)
            diffy (- (clamp player-offset-y 34 94) player-offset-y)
            shifted-y (- screen-state.screen-y diffy)
-           new-screen-y (clamp shifted-y (* 8 bounds.y) (* 8 bounds.y)) ;; TODO: allow more height
+           new-screen-y (clamp shifted-y (* 8 bounds.y) (* 8 (+ bounds.y bounds.h -17)))
            ]
        (if (= (% ticks 60) 0)
            (self:recalculate-color-bar!))
@@ -1174,8 +1191,7 @@
        (draw-sky! screen-state)
        (draw-map! {:x bounds.x :w bounds.w
                    :y bounds.y :h bounds.h
-                   ;; TODO: fix sy for double height map
-                   :sx (- 0 screen-x) :sy 0
+                   :sx (- 0 screen-x) :sy (- 0 (- screen-y (* bounds.y 8)))
                    :trans 0
                    :on-draw (fn [tile x y]
                               (if (between? tile 242 247)
@@ -1243,7 +1259,7 @@
    (fn prepare-game [self]
      (poke 0x03FF8 0)
      (tset self :entities [])
-     (tset self :bounds (?. level-bounds self.level))
+     (tset self :bounds (?. test-level-bounds self.level))
      (tset self :state {:ticks 0 :screen-x 0 :color-bar {} :screen-y (* self.bounds.y 8)})
      ($ui:clear-all!)
      (self:recalculate-color-bar!)
