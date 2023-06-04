@@ -849,20 +849,22 @@
   {:state {}
    :tick
    (fn [self {&as screen-state}]
-     (cls 8)
      {:ticks (+ (or screen-state.ticks 0) 1)})
    :draw
    (fn [self {: ticks &as screen-state}]
-     (draw-sprite! {:sprite 16 :x 40 :y 10 :w 12 :h 4})
-     (draw-sprite! {:sprite 80 :x 40 :y 10 :w 12 :h 4})
+     (cls 0)
+     (draw-sprite! {:sprite 16 :x 10 :y 4 :w 12 :h 4 :trans 0})
+     (draw-sprite! {:sprite 80 :x 36 :y (+ 25 (* 5 (math.sin (% (/ ticks 60) 60)))) :w 12 :h 4 :trans 0})
+     (draw-sprite! {:sprite 161 :x 60 :y 48 :w 10 :h 3 :trans 0})
      ;; (print "Disastrous Flying" 22 22 15 false 2)
-     (print "Critters" 68 52 15 false 2)
-     (print "Disastrous Flying" 23 23 13 false 2)
-     (print "Critters" 69 53 13 false 2))
+     ;; (print "Critters" 68 52 15 false 2)
+     ;; (print "Disastrous Flying" 23 23 13 false 2)
+     ;; (print "Critters" 69 53 13 false 2)
+     )
    :prepare
    (fn []
      (sync 0 1)
-     (poke 0x03FF8 8)
+     (poke 0x03FF8 15)
      ($ui:clear-all!)
      ($ui:menu! {:box {:x 50 :w 140}
                  :options [{:label "Play Game" :action #(do (set $screen.screens.game.two_mode false)
