@@ -958,7 +958,7 @@
   (let [nearby-players
         (-?>> (filterv #(= :player $.tag) entities)
               (filterv #(< (math.abs (- $.state.x x)) 240))
-              (filterv #(< (math.abs (- $.state.y y)) 20))
+              (filterv #(< (math.abs (- $.state.y y)) 144))
               count)]
     (> nearby-players 0)))
 
